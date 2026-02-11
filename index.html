@@ -335,8 +335,9 @@ if (localStorage.getItem('lightdark')) {
 
 if (localStorage.getItem('accessToken')) {
     document.querySelector('#signin > a').innerHTML = '<i data-lucide="log-out"></i>'
-    lucide.createIcons();
     document.querySelector('#export').classList.add('misskey')
+    document.querySelector('#export').innerHTML = '<i data-lucide="cloud-upload"></i>'
+    lucide.createIcons();
     document.querySelector('#import').classList.add('none')
     document.querySelector('#fetch').classList.remove('none')
 }
