@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>별자리 메모보드 - 무한 캔버스 위의 아이디어 모음집</title>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
     <style>
         :root {
             --bg-color: #f8f9fa;
@@ -238,6 +239,10 @@
             display: none;
         }
 
+        .btn svg, .btn img {
+            margin-bottom: -3px;
+        }
+
         #status-bar {
             position: fixed; top: 20px; left: 20px;
             font-size: 12px; color: #999; pointer-events: none;
@@ -278,20 +283,20 @@
     <div id="status-bar">별자리 메모보드! - Canvas: 0, 0</div>
 
     <div id="toolbar">
-        <button class="btn primary" onclick="app.createMemo()">+ 메모</button>
-        <button class="btn" onclick="app.addLink()">북마크</button>
+        <button class="btn primary" onclick="app.createMemo()"><i data-lucide="file-plus"></i></button>
+        <button class="btn" onclick="app.addLink()"><i data-lucide="bookmark-plus"></i></button>
         <span style="width:1px; height:20px; background:var(--tool-border); margin:0 5px;"></span>
-        <button class="btn" onclick="app.connectSelected()">연결</button>
-        <button class="btn danger" onclick="app.disconnectSelected()"> 해제</button>
+        <button class="btn" onclick="app.connectSelected()"><i data-lucide="link-2"></i></button>
+        <button class="btn danger" onclick="app.disconnectSelected()"><i data-lucide="link-2-off"></i></button>
         <span style="width:1px; height:20px; background:var(--tool-border); margin:0 5px;"></span>
-        <button class="btn misskey" id="signin"><a href="/login.html">로그인</a></button>
-        <button class="btn" id="export" onclick="app.exportData()">저장</button>
-        <button class="btn none misskey" id="fetch" onclick="app.fetchData()">열기</button>
-        <button class="btn" id="import" onclick="document.getElementById('file-input').click()">열기</button>
-        <button class="btn danger" onclick="app.clearBoard()">비우기</button>
-        <button class="btn" id="toggledark" onclick="app.toggledark()">파란하늘</button>
+        <button class="btn misskey" id="signin"><a href="/login.html"><img src="./assets/misskey-logo.png" height="20px" /></a></button>
+        <button class="btn" id="export" onclick="app.exportData()"><i data-lucide="file-down"></i></button>
+        <button class="btn none misskey" id="fetch" onclick="app.fetchData()"><i data-lucide="file-up"></i></button>
+        <button class="btn" id="import" onclick="document.getElementById('file-input').click()"><i data-lucide="file-up"></i></button>
+        <button class="btn danger" onclick="app.clearBoard()"><i data-lucide="trash"></i></button>
+        <button class="btn" id="toggledark" onclick="app.toggledark()"><i data-lucide="sun"></i></button>
         <span style="width:1px; height:20px; background:var(--tool-border); margin:0 5px;"></span>
-        <button class="btn primary" ><a href="/about.html">소개</a></button>
+        <button class="btn primary" ><a href="/about.html"><i data-lucide="badge-info"></i></a></button>
     </div>
 
     <input type="file" id="file-input" accept=".json" onchange="app.importData(this)">
@@ -309,6 +314,8 @@
     </div>
 
 <script>
+
+lucide.createIcons();
     
 window.oncontextmenu=function() {
     return false;
@@ -318,7 +325,8 @@ if (localStorage.getItem('lightdark')) {
     if (localStorage.getItem('lightdark') == 'light') {
         document.body.classList.remove('dark-mode');
         document.body.classList.add('light-mode');
-        document.querySelector('#toggledark').innerText = '밤하늘'
+        document.querySelector('#toggledark').innerHTML = '<i data-lucide="moon-star"></i>'
+        lucide.createIcons();
         localStorage.setItem('lightdark', 'light')
     }
 } else {
@@ -326,7 +334,8 @@ if (localStorage.getItem('lightdark')) {
 }
 
 if (localStorage.getItem('accessToken')) {
-    document.querySelector('#signin > a').innerText = '로그아웃'
+    document.querySelector('#signin > a').innerHTML = '<i data-lucide="log-out"></i>'
+    lucide.createIcons();
     document.querySelector('#export').classList.add('misskey')
     document.querySelector('#import').classList.add('none')
     document.querySelector('#fetch').classList.remove('none')
@@ -354,12 +363,14 @@ const app = {
         if (document.body.classList.contains('dark-mode')) {
             document.body.classList.remove('dark-mode');
             document.body.classList.add('light-mode');
-            document.querySelector('#toggledark').innerText = '밤하늘'
+            document.querySelector('#toggledark').innerHTML = '<i data-lucide="moon-star"></i>'
+            lucide.createIcons();
             localStorage.setItem('lightdark', 'light')
         } else {
             document.body.classList.remove('light-mode');
             document.body.classList.add('dark-mode');
-            document.querySelector('#toggledark').innerText = '파란하늘'
+            document.querySelector('#toggledark').innerHTML = '<i data-lucide="sun"></i>'
+            lucide.createIcons();
             localStorage.setItem('lightdark', 'dark')
         }
     },
