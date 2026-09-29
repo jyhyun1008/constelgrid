@@ -267,6 +267,11 @@ function resetDesktopCamera() {
 }
 resetDesktopCamera();
 scene.add(camera);
+// 메모는 조명 영향을 받지 않지만, 손/컨트롤러 모델은 조명이 없으면 까맣게 보임
+scene.add(new THREE.HemisphereLight(0xffffff, 0x666677, 2.5));
+const sun = new THREE.DirectionalLight(0xffffff, 1.5);
+sun.position.set(1, 3, 2);
+scene.add(sun);
 
 // board: 모든 메모와 연결선이 붙는 그룹. 회전 = 좌우 이동, y = 위아래 이동
 const board = new THREE.Group();
@@ -739,8 +744,9 @@ scene.add(toolbar.group);
 function statusText() {
     if (Date.now() < state.toastUntil) return state.toast;
     const n = state.selected.size;
+    if (renderer.xr.isPresenting && !pointers.some(p => p.type === 'xr' && p.connected)) return '컨트롤러나 손을 찾는 중...';
     return renderer.xr.isPresenting
-        ? `선택 ${n}개 · 트리거: 선택/이동 · 그립: 다중 선택 · 스틱: 회전`
+        ? `선택 ${n}개 · 핀치/트리거: 선택·이동 · 버튼은 손가락으로 눌러도 돼요`
         : `선택 ${n}개 · 드래그: 둘러보기 · Shift/우클릭: 다중 선택 · 휠: 위아래`;
 }
 
@@ -785,7 +791,9 @@ function placeToolbar() {
     const pos = camera.getWorldPosition(new THREE.Vector3());
     const dir = camera.getWorldDirection(new THREE.Vector3());
     const yaw = Math.atan2(-dir.x, -dir.z);
-    toolbar.group.position.set(pos.x - Math.sin(yaw) * 0.7, pos.y - 0.36, pos.z - Math.cos(yaw) * 0.7);
+    // VR에서는 손가락으로 누를 수 있게 팔 닿는 거리에
+    const [dist, down] = renderer.xr.isPresenting ? [0.5, 0.38] : [0.7, 0.36];
+    toolbar.group.position.set(pos.x - Math.sin(yaw) * dist, pos.y - down, pos.z - Math.cos(yaw) * dist);
     toolbar.group.rotation.set(0, yaw, 0);
     return { pos, yaw };
 }
@@ -1140,8 +1148,11 @@ const mouse = { type: 'mouse', ndc: new THREE.Vector2(), hover: null, drag: null
 const pointers = [mouse];
 
 function castRay(p) {
-    if (p.type === 'xr') raycaster.setFromXRController(p.obj);
-    else raycaster.setFromCamera(p.ndc, camera);
+    if (p.type === 'xr') {
+        // 핀치/트리거 이벤트 순간의 자세가 반영되도록 행렬을 먼저 갱신
+        p.obj.updateMatrixWorld(true);
+        raycaster.setFromXRController(p.obj);
+    } else raycaster.setFromCamera(p.ndc, camera);
     return raycaster.ray.clone();
 }
 
@@ -1210,16 +1221,21 @@ function updateDrag(p, ray) {
 // --- VR 컨트롤러 ---
 const controllerModels = new XRControllerModelFactory();
 const handModels = new XRHandModelFactory();
-const rayGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1)]);
+// 광선: 1px 선은 헤드셋에서 거의 안 보여서, 끝으로 갈수록 굵어지는 빔으로 그림
+const beamGeo = new THREE.CylinderGeometry(0.004, 0.0012, 1, 8, 1, true);
+beamGeo.rotateX(-Math.PI / 2);
+beamGeo.translate(0, 0, -0.5);
+const cursorGeo = new THREE.RingGeometry(0.012, 0.022, 32);
 
 for (let i = 0; i < 2; i++) {
     const obj = renderer.xr.getController(i);
-    const p = { type: 'xr', obj, hover: null, drag: null, connected: false };
-    const line = new THREE.Line(rayGeo, new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6 }));
-    line.scale.z = 5;
-    obj.add(line);
-    p.line = line;
-    p.cursor = new THREE.Mesh(new THREE.SphereGeometry(0.008, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+    const p = { type: 'xr', obj, hover: null, drag: null, connected: false, poking: null };
+    p.beam = new THREE.Mesh(beamGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55, depthWrite: false }));
+    p.beam.scale.z = 3;
+    obj.add(p.beam);
+    // 커서는 다른 물체에 가려지지 않게 항상 위에 그림
+    p.cursor = new THREE.Mesh(cursorGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide, depthTest: false, transparent: true }));
+    p.cursor.renderOrder = 999;
     p.cursor.visible = false;
     scene.add(p.cursor);
 
@@ -1238,6 +1254,7 @@ for (let i = 0; i < 2; i++) {
     const hand = renderer.xr.getHand(i);
     hand.add(handModels.createHandModel(hand, 'mesh'));
     scene.add(hand);
+    p.hand = hand;
 
     pointers.push(p);
 }
@@ -1252,6 +1269,26 @@ function handleSticks(dt) {
         if (Math.abs(ax) > 0.2) board.rotation.y += ax * dt * 1.2;
         if (Math.abs(ay) > 0.2) board.position.y += ay * dt * 0.8;
     }
+}
+
+// 손 추적: 검지 끝으로 툴바 버튼을 직접 눌러도 동작
+const _tip = new THREE.Vector3();
+function pokeToolbar(p) {
+    const tip = p.hand && p.hand.joints && p.hand.joints['index-finger-tip'];
+    if (!tip || !tip.visible) { p.poking = null; return null; }
+    tip.getWorldPosition(_tip);
+    const local = toolbar.mesh.worldToLocal(_tip);
+    const w = TB.M, h = TB.M * TB.H / TB.W;
+    const inside = Math.abs(local.x) <= w / 2 && Math.abs(local.y) <= h / 2;
+    if (!inside || local.z > 0.04 || local.z < -0.05) { p.poking = null; return null; }
+    const id = toolAt({ x: local.x / w + 0.5, y: local.y / h + 0.5 });
+    if (local.z < 0.012) {
+        if (id && p.poking !== id) pressTool(id);
+        p.poking = id || 'miss';
+    } else if (local.z > 0.025) {
+        p.poking = null;
+    }
+    return id;
 }
 
 function updatePointers() {
@@ -1270,13 +1307,22 @@ function updatePointers() {
             else hovered.add(hit.object.userData.id);
         }
         if (p.type === 'xr') {
-            p.line.scale.z = hit ? hit.distance : 5;
+            const th = T();
+            p.beam.scale.z = hit ? hit.distance : 3;
+            p.beam.material.color.set(hit ? th.accentSnd : 0xffffff);
             p.cursor.visible = !!hit;
-            if (hit) p.cursor.position.copy(hit.point);
+            if (hit) {
+                p.cursor.position.copy(hit.point);
+                p.cursor.lookAt(ray.origin);
+                p.cursor.scale.setScalar(Math.max(0.6, hit.distance / 1.5));
+                p.cursor.material.color.set(p.drag ? th.accent : 0xffffff);
+            }
+            const poked = pokeToolbar(p);
+            if (poked) toolHover = poked;
         }
     }
     for (const [id, e] of entries) {
-        const s = hovered.has(id) ? 1.04 : 1;
+        const s = hovered.has(id) ? 1.06 : 1;
         e.mesh.scale.lerp(new THREE.Vector3(s, s, 1), 0.3);
     }
     toolbar.hover = toolHover;
@@ -1323,7 +1369,7 @@ window.addEventListener('storage', e => {
 // ---------------------------------------------------------------
 // VR 세션
 // ---------------------------------------------------------------
-let recenterFrames = 0;
+let recenterFrames = -1;
 
 async function enterVR() {
     try {
@@ -1333,8 +1379,7 @@ async function enterVR() {
         await renderer.xr.setSession(session);
         session.addEventListener('end', onSessionEnd);
         $('#panel').classList.add('hidden');
-        // 첫 입장에는 보드 전체를 정면으로, 다시 들어올 때는 툴바만 앞으로
-        recenterFrames = 3;
+        recenterFrames = 0;
     } catch (err) {
         toast('VR을 시작하지 못했습니다');
         console.error(err);
@@ -1420,8 +1465,15 @@ async function init() {
     const clock = new THREE.Clock();
     renderer.setAnimationLoop(() => {
         const dt = Math.min(clock.getDelta(), 0.1);
-        if (recenterFrames > 0 && --recenterFrames === 0) {
-            if (state.enteredOnce) placeToolbar(); else recenter();
+        // 헤드셋 위치가 실제로 잡힌 뒤에 정렬 (초기 몇 프레임은 자세가 비어 있을 수 있음)
+        // 첫 입장에는 보드 전체를 정면으로, 다시 들어올 때는 툴바만 앞으로
+        if (recenterFrames >= 0 && renderer.xr.isPresenting) {
+            recenterFrames++;
+            const camY = camera.getWorldPosition(new THREE.Vector3()).y;
+            if ((recenterFrames > 5 && camY > 0.5) || recenterFrames > 120) {
+                recenterFrames = -1;
+                if (state.enteredOnce) placeToolbar(); else recenter();
+            }
         }
         handleSticks(dt);
         updatePointers();
