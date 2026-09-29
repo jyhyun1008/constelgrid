@@ -4,9 +4,13 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"
+    environment:
+      - DOWNLOADS_DIR=/downloads
     volumes:
       # 북마크 정보 캐시 (지워도 다시 채워짐)
       - constelgrid-data:/data
+      # 퀘스트 앱 APK와 latest.json (git에는 안 넣고 서버의 이 폴더에 직접 올림)
+      - ./downloads:/downloads:ro
 
 volumes:
   constelgrid-data:

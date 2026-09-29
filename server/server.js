@@ -1,9 +1,11 @@
 // 별자리 메모보드 서버: 2D 보드 파일을 보여주고, 무료 외부 서비스(microlink, allorigins)가 하던 일을 대신한다.
 //   GET /api/meta?url=...   북마크 제목/설명/대표 이미지 (한 번 읽은 건 캐시)
 //   GET /api/fetch?url=...  드라이브 보드 파일 중계 (브라우저에서 바로 못 받을 때만 씀)
+//   GET /downloads/...      퀘스트 앱 APK와 최신 버전 정보(latest.json). git/이미지 밖의 폴더(DOWNLOADS_DIR)에서
 // 외부 패키지 없이 Node 22 기본 기능만 쓴다.
 import http from 'node:http';
 import fs from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
 import path from 'node:path';
 import dns from 'node:dns/promises';
 import net from 'node:net';
@@ -15,11 +17,13 @@ const UA = 'Mozilla/5.0 (compatible; ConstelgridBot/1.0; +https://grid.howeverin
 const MAX_HTML = 2 * 1024 * 1024;
 const MAX_FILE = 20 * 1024 * 1024;
 const META_TTL = 7 * 24 * 3600 * 1000;
+const DOWNLOADS = path.resolve(process.env.DOWNLOADS_DIR || path.join(import.meta.dirname, '..', 'downloads'));
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon', '.webp': 'image/webp', '.md': 'text/plain; charset=utf-8',
+  '.apk': 'application/vnd.android.package-archive',
 };
 // 서버 폴더나 git 파일은 밖에 보이지 않게
 const HIDDEN = /^\/(server|\.git|\.github|node_modules)(\/|$)|\/\./;
@@ -158,6 +162,42 @@ async function handleFetch(url, out) {
   out.end(buf);
 }
 
+// --- 내려받기: 큰 파일이라 메모리에 올리지 않고 흘려보냄, 끊기면 이어받기(Range) ---
+async function serveDownload(req, pathname, out) {
+  const name = decodeURIComponent(pathname.slice('/downloads/'.length));
+  if (!name || name.includes('/') || name.startsWith('.')) throw new HttpError(404, 'not found');
+  const file = path.join(DOWNLOADS, name);
+  const stat = await fs.stat(file).catch(() => null);
+  if (!stat?.isFile()) throw new HttpError(404, 'not found');
+  const ext = path.extname(name).toLowerCase();
+  const headers = {
+    'Content-Type': TYPES[ext] || 'application/octet-stream',
+    'Accept-Ranges': 'bytes',
+    // 버전 정보는 항상 새로, APK는 파일 이름에 버전이 있어서 오래 캐시해도 됨
+    'Cache-Control': ext === '.json' ? 'no-cache' : 'public, max-age=86400',
+  };
+  if (ext === '.apk') headers['Content-Disposition'] = `attachment; filename="${name}"`;
+  let start = 0, end = stat.size - 1, status = 200;
+  const range = req.headers.range?.match(/^bytes=(\d*)-(\d*)$/);
+  if (range && (range[1] || range[2])) {
+    if (range[1]) { start = Number(range[1]); if (range[2]) end = Math.min(Number(range[2]), end); }
+    else start = Math.max(0, stat.size - Number(range[2]));
+    if (start > end) {
+      out.writeHead(416, { 'Content-Range': `bytes */${stat.size}` });
+      return out.end();
+    }
+    status = 206;
+    headers['Content-Range'] = `bytes ${start}-${end}/${stat.size}`;
+  }
+  headers['Content-Length'] = end - start + 1;
+  out.writeHead(status, headers);
+  if (req.method === 'HEAD') return out.end();
+  const stream = createReadStream(file, { start, end });
+  stream.on('error', () => out.destroy());
+  out.on('close', () => stream.destroy());
+  stream.pipe(out);
+}
+
 // --- 정적 파일 ---
 async function serveStatic(pathname, out) {
   let p = decodeURIComponent(pathname);
@@ -196,6 +236,7 @@ http.createServer(async (req, out) => {
       return await handleFetch(url, out);
     }
     if (u.pathname.startsWith('/api/')) throw new HttpError(404, 'not found');
+    if (u.pathname.startsWith('/downloads/')) return await serveDownload(req, u.pathname, out);
     await serveStatic(u.pathname, out);
   } catch (e) {
     const status = e.status || (e.name === 'TimeoutError' ? 504 : 502);

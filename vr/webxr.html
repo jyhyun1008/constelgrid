@@ -1,0 +1,1488 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>별자리 메모보드 VR - 나를 둘러싼 아이디어 별자리</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+        }
+    }
+    </script>
+    <style>
+        :root {
+            --bg-color: #f8f9fa;
+            --lightgray-color: #f1f3f5;
+            --grid-color: #e1e4e8;
+            --accent-color: #ADD8E6;
+            --tool-border: #ddd;
+            --tool-bg: #ffffff88;
+            --tool-fg: #555;
+            --accent-light-color: #ADD8E655;
+            --accent-snd-color: #b5c2ff;
+            --danger-color: #FF8DA1;
+            --text-color: #333;
+            --card-bg: #ffffff;
+        }
+
+        .dark-mode {
+            --bg-color: #2e313d;
+            --lightgray-color: #424755;
+            --grid-color: #585d6e;
+            --accent-color: #6b63a5;
+            --tool-border: #6f7486;
+            --tool-bg: #1b1d2588;
+            --tool-fg: #d8dbe7;
+            --accent-light-color: #6b63a58b;
+            --accent-snd-color: #637ea5;
+            --danger-color: #6b63a5;
+            --text-color: #f8f9fa;
+            --card-bg: #1b1d25;
+        }
+
+        .light-mode {
+            --bg-color: #f8f9fa;
+            --lightgray-color: #f1f3f5;
+            --grid-color: #e1e4e8;
+            --accent-color: #ADD8E6;
+            --tool-border: #ddd;
+            --tool-bg: #ffffff88;
+            --tool-fg: #555;
+            --accent-light-color: #ADD8E655;
+            --accent-snd-color: #b5c2ff;
+            --danger-color: #FF8DA1;
+            --text-color: #333;
+            --card-bg: #ffffff;
+        }
+
+@font-face {
+    font-family: 'A2z';
+    src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/2601-6@1.0/에이투지체-4Regular.woff2') format('woff2');
+    font-weight: 400;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'A2z';
+    src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/2601-6@1.0/에이투지체-7Bold.woff2') format('woff2');
+    font-weight: 700;
+    font-display: swap;
+}
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'A2z';}
+
+        body {
+            overflow: hidden;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            user-select: none;
+        }
+
+        a {
+            text-decoration: none;
+            color: inherit;
+        }
+
+        canvas { display: block; touch-action: none; }
+
+        #status-bar {
+            position: fixed; top: 20px; left: 20px;
+            font-size: 12px; color: #999; pointer-events: none;
+            background: var(--tool-bg); padding: 5px 10px; border-radius: 10px;
+        }
+
+        /* 안내 패널 (VR 입장 전 / 편집 후) */
+        #panel {
+            position: fixed; left: 16px; bottom: 16px;
+            width: 360px; max-width: calc(100% - 32px);
+            background: var(--card-bg);
+            border-radius: 24px;
+            padding: 18px 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            display: flex; flex-direction: column; gap: 12px;
+            z-index: 1000;
+        }
+        #panel.hidden { display: none; }
+        #panel h3 { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+        #panel p { font-size: 13px; line-height: 1.7; color: var(--tool-fg); }
+        #panel.collapsed .panel-body { display: none; }
+        .panel-body { display: flex; flex-direction: column; gap: 12px; }
+        .row { display: flex; gap: 8px; flex-wrap: wrap; }
+        details { font-size: 12px; color: var(--tool-fg); line-height: 1.8; }
+        details summary { cursor: pointer; }
+        details ul { padding-inline-start: 20px; padding-top: 4px; }
+
+        .btn {
+            background: var(--card-bg); border: 1px solid var(--grid-color);
+            padding: 8px 16px; border-radius: 20px;
+            cursor: pointer; font-weight: 600; color: var(--tool-fg);
+            transition: 0.2s; font-size: 13px; white-space: nowrap;
+        }
+        .btn:hover { background: var(--lightgray-color); transform: translateY(-1px); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .btn.primary { background: var(--accent-color); color: white; border: none; }
+        .btn.primary:hover { background: var(--accent-snd-color) }
+        .btn.danger { color: var(--danger-color); }
+        .btn.big { font-size: 16px; padding: 12px 20px; flex: 1; }
+        .btn.none { display: none; }
+
+        /* 에디터 모달 */
+        #editor-modal {
+            display: none; position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); z-index: 9999;
+            justify-content: center; align-items: center;
+        }
+        #editor-modal.active { display: flex !important; }
+        .modal-card {
+            background: var(--card-bg); padding: 24px; border-radius: 16px;
+            width: 500px; max-width: 90%;
+            box-shadow: 0 20px 25px -5px rgba(0,0,0,0.2);
+        }
+        textarea {
+            width: 100%; height: 200px; margin: 15px 0; padding: 15px;
+            border: 1px solid var(--grid-color); border-radius: 8px;
+            font-family: monospace; resize: none;
+            background-color: var(--card-bg); color: var(--text-color);
+            user-select: text;
+        }
+        #file-input { display: none; }
+    </style>
+</head>
+<body class="dark-mode">
+
+    <div id="status-bar">별자리 메모보드 VR</div>
+
+    <div id="panel">
+        <h3>
+            <span>별자리 메모보드 VR</span>
+            <button class="btn" id="collapse">접기</button>
+        </h3>
+        <div class="panel-body">
+            <p id="panel-desc">메모들이 나를 둘러싼 별자리처럼 떠 있습니다. 메타 퀘스트 브라우저에서 <b>VR 입장</b>을 누르세요. 2D 보드와 같은 데이터를 사용하므로 어디서 고쳐도 그대로 이어집니다.</p>
+            <div class="row">
+                <button class="btn primary big" id="enter-vr" disabled>VR 확인 중...</button>
+            </div>
+            <div class="row">
+                <a class="btn" href="/index.html">2D 보드</a>
+                <button class="btn" id="export">파일로 저장</button>
+                <button class="btn" id="import">파일 열기</button>
+            </div>
+            <details>
+                <summary>조작 방법</summary>
+                <ul>
+                    <li><b>트리거(핀치)</b>: 메모 선택 · 끌어서 이동 / 빈 하늘을 잡고 끌면 보드 회전</li>
+                    <li><b>그립</b>: 여러 개 선택 (손 추적은 메뉴의 <b>다중 선택</b>)</li>
+                    <li><b>썸스틱</b>: 좌우 회전 · 위아래 이동</li>
+                    <li><b>편집 · 북마크</b>: 잠시 VR에서 나와 키보드로 입력한 뒤 다시 입장</li>
+                    <li>PC에서는 드래그로 둘러보기, Shift/우클릭으로 다중 선택, 휠로 위아래 이동</li>
+                </ul>
+            </details>
+        </div>
+    </div>
+
+    <input type="file" id="file-input" accept=".json">
+
+    <div id="editor-modal">
+        <div class="modal-card">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+                <h3 id="editor-title">메모 편집</h3>
+                <button class="btn" id="ime-toggle" title="Shift+Space로도 전환">한</button>
+            </div>
+            <textarea id="editor-textarea" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
+            <p id="ime-hint" style="font-size: 12px; color: var(--tool-fg); margin: -8px 0 12px;"></p>
+            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button class="btn danger" id="editor-delete" style="margin-right: auto;">삭제</button>
+                <button class="btn" id="editor-open">링크 열기</button>
+                <button class="btn" id="editor-cancel">취소</button>
+                <button class="btn primary" id="editor-save">확인</button>
+            </div>
+        </div>
+    </div>
+
+<script type="module">
+import * as THREE from 'three';
+import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
+import { XRHandModelFactory } from 'three/addons/webxr/XRHandModelFactory.js';
+
+// 2D 보드(index.html)와 같은 저장소를 사용
+const STORAGE_KEY = 'mindgrid_final';
+
+const PX = 0.0025;   // 2D 캔버스 1px = 0.25cm
+const RADIUS = 2.2;  // 메모가 떠 있는 원통의 반지름 (m)
+const EYE = 1.5;     // 캔버스 중심이 놓이는 눈높이 (m)
+const TEX = 3;       // 메모 텍스처 해상도 배율
+const FONT = "'A2z', sans-serif";
+const BASE = 14, LH = 1.8;
+
+const THEMES = {
+    dark: {
+        sky: '#15171e', star: '#d8dbe7', bg: '#2e313d', lightgray: '#424755', grid: '#585d6e',
+        accent: '#6b63a5', accentLight: '#3b3a5c', accentSnd: '#637ea5', danger: '#8f86d6',
+        toolFg: '#d8dbe7', text: '#f8f9fa', card: '#1b1d25', sub: '#9b9fa3', line: '#9b9fa3'
+    },
+    light: {
+        sky: '#f8f9fa', star: '#c3c8d0', bg: '#f8f9fa', lightgray: '#f1f3f5', grid: '#e1e4e8',
+        accent: '#ADD8E6', accentLight: '#e2f2f7', accentSnd: '#b5c2ff', danger: '#FF8DA1',
+        toolFg: '#555555', text: '#333333', card: '#ffffff', sub: '#666666', line: '#9b9fa3'
+    }
+};
+
+const state = {
+    data: { memos: [], connections: [] },
+    selected: new Set(),
+    multiSelect: false,
+    theme: localStorage.getItem('lightdark') === 'light' ? 'light' : 'dark',
+    editorMode: null,
+    editingId: null,
+    pendingDelete: 0,
+    toast: '', toastUntil: 0,
+    enteredOnce: false,
+};
+const origin = { x: 0, y: 0 };
+const T = () => THEMES[state.theme];
+
+// ---------------------------------------------------------------
+// Scene
+// ---------------------------------------------------------------
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.xr.enabled = true;
+renderer.xr.setReferenceSpaceType('local-floor');
+document.body.prepend(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.05, 200);
+camera.rotation.order = 'YXZ';
+const look = { yaw: 0, pitch: 0 };
+function resetDesktopCamera() {
+    camera.position.set(0, 1.6, 0);
+    camera.rotation.set(look.pitch, look.yaw, 0);
+}
+resetDesktopCamera();
+scene.add(camera);
+// 메모는 조명 영향을 받지 않지만, 손/컨트롤러 모델은 조명이 없으면 까맣게 보임
+scene.add(new THREE.HemisphereLight(0xffffff, 0x666677, 2.5));
+const sun = new THREE.DirectionalLight(0xffffff, 1.5);
+sun.position.set(1, 3, 2);
+scene.add(sun);
+
+// board: 모든 메모와 연결선이 붙는 그룹. 회전 = 좌우 이동, y = 위아래 이동
+const board = new THREE.Group();
+const memoGroup = new THREE.Group();
+const lineGroup = new THREE.Group();
+board.add(lineGroup, memoGroup);
+scene.add(board);
+
+const lineMat = new THREE.MeshBasicMaterial({ color: 0x9b9fa3, transparent: true, opacity: 0.55 });
+
+let stars = [], floorGrid = null;
+function buildEnvironment() {
+    stars.forEach(s => { scene.remove(s); s.geometry.dispose(); s.material.dispose(); });
+    stars = [];
+    [[1800, 1.6], [160, 3.2]].forEach(([n, size]) => {
+        const pos = new Float32Array(n * 3);
+        for (let i = 0; i < n; i++) {
+            const u = Math.random() * 2 - 1, t = Math.random() * Math.PI * 2, r = Math.sqrt(1 - u * u);
+            pos.set([r * Math.cos(t) * 80, u * 80, r * Math.sin(t) * 80], i * 3);
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        const pts = new THREE.Points(geo, new THREE.PointsMaterial({ color: T().star, size, sizeAttenuation: false }));
+        stars.push(pts); scene.add(pts);
+    });
+    if (floorGrid) { scene.remove(floorGrid); floorGrid.geometry.dispose(); floorGrid.material.dispose(); }
+    floorGrid = new THREE.PolarGridHelper(4, 16, 8, 64, T().grid, T().grid);
+    floorGrid.material.transparent = true;
+    floorGrid.material.opacity = 0.4;
+    scene.add(floorGrid);
+    scene.background = new THREE.Color(T().sky);
+    lineMat.color.set(T().line);
+}
+
+// ---------------------------------------------------------------
+// 원통 좌표 <-> 2D 캔버스 좌표
+// ---------------------------------------------------------------
+function placeOnCylinder(obj, theta, h, r) {
+    obj.position.set(Math.sin(theta) * r, h, -Math.cos(theta) * r);
+    obj.rotation.set(0, -theta, 0);
+}
+
+const wrapAngle = a => Math.atan2(Math.sin(a), Math.cos(a));
+
+// 광선과 원통의 교점을 board 로컬 좌표(θ, 높이)로
+const _inv = new THREE.Matrix4();
+function rayToBoardCyl(ray) {
+    board.updateMatrixWorld();
+    _inv.copy(board.matrixWorld).invert();
+    const o = ray.origin.clone().applyMatrix4(_inv);
+    const d = ray.direction.clone().transformDirection(_inv);
+    const a = d.x * d.x + d.z * d.z;
+    if (a < 1e-6) return null;
+    const b = 2 * (o.x * d.x + o.z * d.z), c = o.x * o.x + o.z * o.z - RADIUS * RADIUS;
+    const disc = b * b - 4 * a * c;
+    if (disc < 0) return null;
+    const t = (-b + Math.sqrt(disc)) / (2 * a);
+    if (t < 0) return null;
+    const p = o.addScaledVector(d, t);
+    return { theta: Math.atan2(p.x, -p.z), h: p.y };
+}
+
+const toCanvas = (theta, h) => ({ x: theta * RADIUS / PX + origin.x, y: (EYE - h) / PX + origin.y });
+
+function computeOrigin() {
+    const ms = state.data.memos;
+    if (!ms.length) { origin.x = 0; origin.y = 0; return; }
+    let sx = 0, sy = 0;
+    ms.forEach(m => {
+        const e = entries.get(m.id);
+        sx += (Number(m.x) || 0) + (e ? e.w : 220) / 2;
+        sy += (Number(m.y) || 0) + (e ? e.h : 120) / 2;
+    });
+    origin.x = sx / ms.length; origin.y = sy / ms.length;
+}
+
+// 지금 바라보는 방향의 캔버스 좌표 (새 메모 위치)
+function viewCenter() {
+    const pos = camera.getWorldPosition(new THREE.Vector3());
+    const dir = camera.getWorldDirection(new THREE.Vector3());
+    const hit = rayToBoardCyl(new THREE.Ray(pos, dir))
+        || { theta: Math.atan2(dir.x, -dir.z) + board.rotation.y, h: pos.y - board.position.y };
+    return toCanvas(hit.theta, THREE.MathUtils.clamp(hit.h, 0.3, 2.6));
+}
+
+// ---------------------------------------------------------------
+// 메모 → 캔버스 텍스처 (마크다운 간이 렌더러)
+// ---------------------------------------------------------------
+const measureCtx = document.createElement('canvas').getContext('2d');
+
+const decode = s => String(s ?? '')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
+
+function fontStr(run, size) {
+    if (run.code) return `${size}px ui-monospace, monospace`;
+    return `${run.italic ? 'italic ' : ''}${run.bold ? 700 : 400} ${size}px ${FONT}`;
+}
+
+function inlineRuns(tokens, style = {}) {
+    const runs = [];
+    for (const t of tokens || []) {
+        switch (t.type) {
+            case 'strong': runs.push(...inlineRuns(t.tokens, { ...style, bold: true })); break;
+            case 'em': runs.push(...inlineRuns(t.tokens, { ...style, italic: true })); break;
+            case 'del': runs.push(...inlineRuns(t.tokens, { ...style, del: true })); break;
+            case 'link': runs.push(...inlineRuns(t.tokens, style)); break;
+            case 'codespan': runs.push({ ...style, code: true, text: decode(t.text) }); break;
+            case 'br': runs.push({ ...style, br: true, text: '' }); break;
+            case 'image': runs.push({ ...style, text: `🖼 ${t.text || '이미지'}` }); break;
+            case 'text':
+                if (t.tokens) runs.push(...inlineRuns(t.tokens, style));
+                else runs.push({ ...style, text: decode(t.text) });
+                break;
+            default: runs.push({ ...style, text: decode(t.text ?? t.raw ?? '') });
+        }
+    }
+    return runs;
+}
+
+// 단어 단위 줄바꿈, 너무 긴 단어는 글자 단위로 자름
+function wrapRuns(runs, maxW, size) {
+    const ctx = measureCtx;
+    const lines = [[]];
+    const cur = () => lines[lines.length - 1];
+    let x = 0;
+    for (const run of runs) {
+        if (run.br) { lines.push([]); x = 0; continue; }
+        ctx.font = fontStr(run, size);
+        for (let part of run.text.split(/(\s+)/)) {
+            if (!part) continue;
+            if (/^\s+$/.test(part)) {
+                if (x === 0) continue;
+                part = ' ';
+            }
+            let w = ctx.measureText(part).width;
+            if (part !== ' ' && x + w > maxW && x > 0) { lines.push([]); x = 0; }
+            while (w > maxW - x && part.length > 1) {
+                let i = 1;
+                while (i < part.length && ctx.measureText(part.slice(0, i + 1)).width <= maxW - x) i++;
+                cur().push({ x, text: part.slice(0, i), run });
+                lines.push([]); x = 0;
+                part = part.slice(i); w = ctx.measureText(part).width;
+            }
+            cur().push({ x, text: part, run });
+            x += w;
+        }
+    }
+    return lines;
+}
+
+function layoutText(runs, x, width, y, ops, size = BASE, lh = size * LH) {
+    for (const line of wrapRuns(runs, width, size)) {
+        for (const it of line) ops.push({ type: 'text', x: x + it.x, y: y + lh / 2, text: it.text, run: it.run, size });
+        y += lh;
+    }
+    return y;
+}
+
+function layoutBlocks(tokens, x, width, y, ops) {
+    for (const t of tokens) {
+        switch (t.type) {
+            case 'heading': {
+                const size = t.depth <= 2 ? BASE * 1.1 : t.depth === 3 ? BASE * 1.17 : BASE;
+                y = layoutText(inlineRuns(t.tokens).map(r => ({ ...r, bold: true })), x, width, y, ops, size);
+                if (t.depth <= 2) { ops.push({ type: 'rect', x, y, w: width, h: 1, color: 'grid' }); y += 6; }
+                break;
+            }
+            case 'paragraph':
+                y = layoutText(inlineRuns(t.tokens), x, width, y + 5, ops) + 5;
+                break;
+            case 'text':
+                y = layoutText(inlineRuns(t.tokens || [{ type: 'text', text: t.text }]), x, width, y, ops);
+                break;
+            case 'list': {
+                y += 5;
+                const start = t.start === '' || t.start == null ? 1 : Number(t.start);
+                t.items.forEach((item, i) => {
+                    const marker = item.task ? (item.checked ? '☑' : '☐') : t.ordered ? `${start + i}.` : '•';
+                    ops.push({ type: 'text', x: x + 18, y: y + BASE * LH / 2, text: marker, run: {}, size: BASE, align: 'right' });
+                    const before = y;
+                    y = layoutBlocks(item.tokens, x + 24, width - 24, y, ops);
+                    if (y === before) y += BASE * LH;
+                });
+                y += 5;
+                break;
+            }
+            case 'blockquote': {
+                const idx = ops.length, start = y;
+                ops.push(null);
+                y = layoutBlocks(t.tokens, x + 12, width - 22, y, ops);
+                ops[idx] = { type: 'quote', x, y: start, w: width, h: y - start };
+                break;
+            }
+            case 'code': {
+                const lines = t.text.split('\n'), lh = 13 * 1.5, h = lines.length * lh + 12;
+                ops.push({ type: 'box', x, y: y + 5, w: width, h, color: 'lightgray' });
+                lines.forEach((ln, i) => ops.push({ type: 'text', x: x + 8, y: y + 11 + lh * i + lh / 2, text: ln, run: { code: true }, size: 13 }));
+                y += h + 10;
+                break;
+            }
+            case 'hr':
+                ops.push({ type: 'rect', x, y: y + 6, w: width, h: 1, color: 'grid' });
+                y += 13;
+                break;
+            case 'table':
+                [t.header, ...t.rows].forEach((row, i) => {
+                    y = layoutText([{ text: decode(row.map(c => c.text).join(' | ')), bold: i === 0 }], x, width, y, ops);
+                });
+                break;
+            case 'space': case 'def': case 'checkbox':
+                break;
+            default: {
+                const raw = decode((t.text || t.raw || '').replace(/<[^>]*>/g, '').trim());
+                if (raw) y = layoutText([{ text: raw }], x, width, y, ops);
+            }
+        }
+    }
+    return y;
+}
+
+function drawOps(ctx, ops, ox, oy, th) {
+    for (const op of ops) {
+        if (op.type === 'rect') {
+            ctx.fillStyle = th[op.color];
+            ctx.fillRect(ox + op.x, oy + op.y, op.w, op.h);
+        } else if (op.type === 'box') {
+            ctx.fillStyle = th[op.color];
+            ctx.beginPath(); ctx.roundRect(ox + op.x, oy + op.y, op.w, op.h, 6); ctx.fill();
+        } else if (op.type === 'quote') {
+            ctx.fillStyle = th.bg;
+            ctx.beginPath(); ctx.roundRect(ox + op.x, oy + op.y, op.w, op.h, 10); ctx.fill();
+            ctx.fillStyle = th.accent;
+            ctx.fillRect(ox + op.x, oy + op.y + 4, 2, op.h - 8);
+        } else if (op.type === 'text') {
+            const run = op.run || {};
+            ctx.font = fontStr(run, op.size);
+            ctx.fillStyle = th.text;
+            ctx.textAlign = op.align || 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(op.text, ox + op.x, oy + op.y);
+            if (run.del) ctx.fillRect(ox + op.x, oy + op.y, ctx.measureText(op.text).width, 1);
+        }
+    }
+}
+
+function prepareCanvas(e, W, H) {
+    e.canvas.width = Math.ceil(W * TEX);
+    e.canvas.height = Math.ceil(H * TEX);
+    const ctx = e.canvas.getContext('2d');
+    ctx.setTransform(TEX, 0, 0, TEX, 0, 0);
+    return ctx;
+}
+
+function drawCard(ctx, W, H, th, selected, handleH = 24) {
+    ctx.beginPath(); ctx.roundRect(0, 0, W, H, 12);
+    ctx.fillStyle = th.card; ctx.fill();
+    ctx.save(); ctx.clip();
+    ctx.fillStyle = th.accentLight;
+    ctx.fillRect(0, 0, W, handleH);
+    ctx.restore();
+    if (selected) {
+        ctx.beginPath(); ctx.roundRect(1.5, 1.5, W - 3, H - 3, 11);
+        ctx.strokeStyle = th.accent; ctx.lineWidth = 3; ctx.stroke();
+    }
+}
+
+function drawTextMemo(e, memo, th, selected) {
+    const W = 220, PAD = 16, TOP = 28, MAXC = 200;
+    const ops = [];
+    let tokens;
+    try { tokens = marked.lexer(memo.content || ''); }
+    catch { tokens = [{ type: 'text', text: memo.content || '' }]; }
+    const height = layoutBlocks(tokens, 0, W - PAD * 2, 0, ops);
+    const contentH = Math.min(height, MAXC);
+    const H = Math.max(120, TOP + contentH + PAD);
+
+    const ctx = prepareCanvas(e, W, H);
+    drawCard(ctx, W, H, th, selected);
+    ctx.save();
+    ctx.beginPath(); ctx.rect(PAD, TOP, W - PAD * 2, contentH); ctx.clip();
+    drawOps(ctx, ops, PAD, TOP, th);
+    ctx.restore();
+    // 넘치는 내용은 2D에서는 스크롤, VR에서는 흐리게 잘라서 표시
+    if (height > MAXC) {
+        const g = ctx.createLinearGradient(0, TOP + contentH - 30, 0, TOP + contentH);
+        g.addColorStop(0, th.card + '00'); g.addColorStop(1, th.card);
+        ctx.fillStyle = g;
+        ctx.fillRect(PAD, TOP + contentH - 30, W - PAD * 2, 30);
+    }
+    return { W, H };
+}
+
+function drawLinkMemo(e, memo, th, selected, img) {
+    const W = 300, IW = W - 24, meta = memo.meta;
+    const titleLines = wrapRuns([{ text: meta.title || memo.url || '', bold: true }], IW, 14);
+    let descLines = meta.desc ? wrapRuns([{ text: meta.desc }], IW, 12) : [];
+    if (descLines.length > 2) {
+        descLines = descLines.slice(0, 2);
+        const last = descLines[1][descLines[1].length - 1];
+        if (last) last.text += '…';
+    }
+    const TL = 14 * 1.3, DL = 15;
+    const H = 24 + 150 + 12 + titleLines.length * TL + 6 + descLines.length * DL + 8 + 14 + 12;
+
+    const ctx = prepareCanvas(e, W, H);
+    drawCard(ctx, W, H, th, false);
+    ctx.save();
+    ctx.beginPath(); ctx.roundRect(0, 0, W, H, 12); ctx.clip();
+    ctx.beginPath(); ctx.rect(0, 24, W, 150); ctx.clip();
+    if (img) {
+        const s = Math.max(W / img.width, 150 / img.height);
+        const iw = img.width * s, ih = img.height * s;
+        ctx.drawImage(img, (W - iw) / 2, 24 + (150 - ih) / 2, iw, ih);
+    } else {
+        ctx.fillStyle = th.lightgray; ctx.fillRect(0, 24, W, 150);
+        ctx.font = `36px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = th.sub; ctx.fillText('🔗', W / 2, 99);
+    }
+    ctx.restore();
+    ctx.fillStyle = th.grid; ctx.fillRect(0, 174, W, 1);
+
+    let y = 24 + 150 + 12;
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = th.text; ctx.font = fontStr({ bold: true }, 14);
+    titleLines.forEach(line => { line.forEach(it => ctx.fillText(it.text, 12 + it.x, y + TL / 2)); y += TL; });
+    y += 6;
+    ctx.fillStyle = th.sub; ctx.font = fontStr({}, 12);
+    descLines.forEach(line => { line.forEach(it => ctx.fillText(it.text, 12 + it.x, y + DL / 2)); y += DL; });
+    y += 8;
+    ctx.fillStyle = '#999'; ctx.font = fontStr({}, 11);
+    ctx.fillText(`🔗 ${String(meta.publisher || '').toUpperCase()}`, 12, y + 7);
+
+    if (selected) {
+        ctx.beginPath(); ctx.roundRect(1.5, 1.5, W - 3, H - 3, 11);
+        ctx.strokeStyle = th.accent; ctx.lineWidth = 3; ctx.stroke();
+    }
+    return { W, H };
+}
+
+// 링크 썸네일: CORS가 막히면 이미지 프록시로 한 번 더 시도
+const images = new Map();
+function getImage(url) {
+    if (!url) return null;
+    const c = images.get(url);
+    if (c instanceof HTMLImageElement) return c;
+    if (!c) {
+        images.set(url, 'loading');
+        const load = (src, fallback) => {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => { images.set(url, img); syncMemos(); };
+            img.onerror = () => fallback ? load(fallback) : images.set(url, 'error');
+            img.src = src;
+        };
+        load(url, `https://images.weserv.nl/?url=${encodeURIComponent(url)}`);
+    }
+    return null;
+}
+
+// ---------------------------------------------------------------
+// 메모 메쉬 동기화
+// ---------------------------------------------------------------
+const entries = new Map(); // id -> { mesh, canvas, w, h, key, theta, hgt }
+
+function createEntry(id) {
+    const mesh = new THREE.Mesh(
+        new THREE.PlaneGeometry(1, 1),
+        new THREE.MeshBasicMaterial({ alphaTest: 0.5, side: THREE.FrontSide })
+    );
+    mesh.userData.id = id;
+    memoGroup.add(mesh);
+    const e = { mesh, canvas: document.createElement('canvas'), w: 220, h: 120, key: '', theta: 0, hgt: EYE };
+    entries.set(id, e);
+    return e;
+}
+
+function redraw(e, memo, img) {
+    const th = T(), sel = state.selected.has(memo.id);
+    const { W, H } = memo.type === 'link' && memo.meta
+        ? drawLinkMemo(e, memo, th, sel, img)
+        : drawTextMemo(e, { ...memo, content: memo.content ?? memo.url ?? '' }, th, sel);
+    const tex = new THREE.CanvasTexture(e.canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    e.mesh.material.map?.dispose();
+    e.mesh.material.map = tex;
+    e.mesh.material.needsUpdate = true;
+    if (W !== e.w || H !== e.h || !e.sized) {
+        e.mesh.geometry.dispose();
+        e.mesh.geometry = new THREE.PlaneGeometry(W * PX, H * PX);
+        e.w = W; e.h = H; e.sized = true;
+    }
+}
+
+function positionEntry(e, memo, index) {
+    const cx = (Number(memo.x) || 0) + e.w / 2, cy = (Number(memo.y) || 0) + e.h / 2;
+    e.theta = (cx - origin.x) * PX / RADIUS;
+    e.hgt = EYE - (cy - origin.y) * PX;
+    // 나중에 만든 메모가 2D처럼 위에 오도록 조금씩 앞으로
+    placeOnCylinder(e.mesh, e.theta, e.hgt, RADIUS - index * 0.0004);
+}
+
+function syncMemos() {
+    const alive = new Set();
+    state.data.memos.forEach((memo, i) => {
+        alive.add(memo.id);
+        const e = entries.get(memo.id) || createEntry(memo.id);
+        const img = memo.type === 'link' && memo.meta ? getImage(memo.meta.image) : null;
+        const key = [state.theme, state.selected.has(memo.id), memo.type, memo.content, memo.url, JSON.stringify(memo.meta || null), !!img].join('|');
+        if (key !== e.key) { redraw(e, memo, img); e.key = key; }
+        positionEntry(e, memo, i);
+    });
+    for (const [id, e] of entries) {
+        if (alive.has(id)) continue;
+        memoGroup.remove(e.mesh);
+        e.mesh.geometry.dispose(); e.mesh.material.map?.dispose(); e.mesh.material.dispose();
+        entries.delete(id);
+    }
+    rebuildLines();
+    updateStatus();
+}
+
+function rebuildLines() {
+    lineGroup.children.forEach(c => c.geometry.dispose());
+    lineGroup.clear();
+    const r = RADIUS + 0.02, N = 32;
+    for (const c of state.data.connections) {
+        const a = entries.get(c.from), b = entries.get(c.to);
+        if (!a || !b) continue;
+        const pts = [];
+        for (let k = 0; k <= N; k++) {
+            const s = k / N, th = a.theta + (b.theta - a.theta) * s;
+            pts.push(new THREE.Vector3(Math.sin(th) * r, a.hgt + (b.hgt - a.hgt) * s, -Math.cos(th) * r));
+        }
+        lineGroup.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), N, 0.005, 6, false), lineMat));
+    }
+}
+
+// ---------------------------------------------------------------
+// VR 툴바 (캔버스 한 장에 버튼을 그림)
+// ---------------------------------------------------------------
+const TOOLS = [
+    { id: 'memo', label: '새 메모', primary: true },
+    { id: 'link', label: '북마크' },
+    { id: 'connect', label: '연결' },
+    { id: 'disconnect', label: '연결 해제', danger: true },
+    { id: 'multi', label: '다중 선택' },
+    { id: 'edit', label: '편집' },
+    { id: 'delete', label: '삭제', danger: true },
+    { id: 'theme', label: '테마' },
+    { id: 'recenter', label: '가운데로' },
+    { id: 'exit', label: '나가기' },
+];
+TOOLS.forEach((t, i) => { t.rect = { x: 20 + (i % 5) * 150, y: 20 + Math.floor(i / 5) * 66, w: 140, h: 56 }; });
+
+const TB = { W: 780, H: 210, S: 2, M: 0.62 };
+const toolbar = { group: new THREE.Group(), canvas: document.createElement('canvas'), hover: null, key: '' };
+toolbar.canvas.width = TB.W * TB.S;
+toolbar.canvas.height = TB.H * TB.S;
+toolbar.tex = new THREE.CanvasTexture(toolbar.canvas);
+toolbar.tex.colorSpace = THREE.SRGBColorSpace;
+toolbar.mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(TB.M, TB.M * TB.H / TB.W),
+    new THREE.MeshBasicMaterial({ map: toolbar.tex, alphaTest: 0.5 })
+);
+toolbar.mesh.rotation.x = -0.6;
+toolbar.group.add(toolbar.mesh);
+scene.add(toolbar.group);
+
+function statusText() {
+    if (Date.now() < state.toastUntil) return state.toast;
+    const n = state.selected.size;
+    if (renderer.xr.isPresenting && !pointers.some(p => p.type === 'xr' && p.connected)) return '컨트롤러나 손을 찾는 중...';
+    return renderer.xr.isPresenting
+        ? `선택 ${n}개 · 핀치/트리거: 선택·이동 · 버튼은 손가락으로 눌러도 돼요`
+        : `선택 ${n}개 · 드래그: 둘러보기 · Shift/우클릭: 다중 선택 · 휠: 위아래`;
+}
+
+function drawToolbar() {
+    const th = T(), deleting = Date.now() < state.pendingDelete, status = statusText();
+    const key = [state.theme, toolbar.hover, state.multiSelect, deleting, status].join('|');
+    if (key === toolbar.key) return;
+    toolbar.key = key;
+
+    const ctx = toolbar.canvas.getContext('2d');
+    ctx.setTransform(TB.S, 0, 0, TB.S, 0, 0);
+    ctx.clearRect(0, 0, TB.W, TB.H);
+    ctx.beginPath(); ctx.roundRect(1, 1, TB.W - 2, TB.H - 2, 28);
+    ctx.fillStyle = th.card; ctx.fill();
+    ctx.strokeStyle = th.grid; ctx.lineWidth = 2; ctx.stroke();
+
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (const t of TOOLS) {
+        const on = t.primary || (t.id === 'multi' && state.multiSelect);
+        const hov = toolbar.hover === t.id;
+        let bg = th.card, fg = t.danger ? th.danger : th.toolFg, border = th.grid;
+        if (on) { bg = th.accent; fg = '#fff'; border = th.accent; }
+        if (hov) bg = on ? th.accentSnd : th.lightgray;
+        const { x, y, w, h } = t.rect;
+        ctx.beginPath(); ctx.roundRect(x, y, w, h, 28);
+        ctx.fillStyle = bg; ctx.fill();
+        ctx.strokeStyle = border; ctx.lineWidth = 2; ctx.stroke();
+        ctx.fillStyle = fg; ctx.font = `700 21px ${FONT}`;
+        ctx.fillText(t.id === 'delete' && deleting ? '정말 삭제?' : t.label, x + w / 2, y + h / 2 + 1);
+    }
+    ctx.fillStyle = th.toolFg; ctx.font = `400 17px ${FONT}`;
+    ctx.fillText(status, TB.W / 2, 176);
+    toolbar.tex.needsUpdate = true;
+}
+
+function toolAt(uv) {
+    const x = uv.x * TB.W, y = (1 - uv.y) * TB.H;
+    return TOOLS.find(t => x >= t.rect.x && x <= t.rect.x + t.rect.w && y >= t.rect.y && y <= t.rect.y + t.rect.h)?.id || null;
+}
+
+function placeToolbar() {
+    const pos = camera.getWorldPosition(new THREE.Vector3());
+    const dir = camera.getWorldDirection(new THREE.Vector3());
+    const yaw = Math.atan2(-dir.x, -dir.z);
+    // VR에서는 손가락으로 누를 수 있게 팔 닿는 거리에
+    const [dist, down] = renderer.xr.isPresenting ? [0.5, 0.38] : [0.7, 0.36];
+    toolbar.group.position.set(pos.x - Math.sin(yaw) * dist, pos.y - down, pos.z - Math.cos(yaw) * dist);
+    toolbar.group.rotation.set(0, yaw, 0);
+    return { pos, yaw };
+}
+
+function recenter() {
+    computeOrigin();
+    const { pos, yaw } = placeToolbar();
+    board.rotation.set(0, yaw, 0);
+    board.position.set(0, pos.y - EYE, 0);
+    syncMemos();
+}
+
+function toast(msg) {
+    state.toast = msg;
+    state.toastUntil = Date.now() + 3000;
+    updateStatus();
+}
+
+function pressTool(id) {
+    switch (id) {
+        case 'memo': createMemo(); break;
+        case 'link': openEditor('link-new'); break;
+        case 'connect': connectSelected(); break;
+        case 'disconnect': disconnectSelected(); break;
+        case 'multi':
+            state.multiSelect = !state.multiSelect;
+            toast(state.multiSelect ? '다중 선택: 누르는 메모가 차례로 선택됩니다' : '다중 선택 끔');
+            break;
+        case 'edit': {
+            const ids = [...state.selected];
+            if (ids.length !== 1) toast('편집할 메모를 하나만 선택하세요');
+            else openEditor('memo', ids[0]);
+            break;
+        }
+        case 'delete': deleteSelected(); break;
+        case 'theme': toggleTheme(); break;
+        case 'recenter': recenter(); break;
+        case 'exit':
+            if (renderer.xr.isPresenting) renderer.xr.getSession().end();
+            else location.href = '/index.html';
+            break;
+    }
+}
+
+// ---------------------------------------------------------------
+// 메모 편집 기능 (2D 보드와 동일한 데이터 구조)
+// ---------------------------------------------------------------
+function createMemo(content = '') {
+    const c = viewCenter();
+    state.data.memos.push({
+        id: 'memo_' + Date.now(),
+        type: 'text',
+        content: content || '# 아이디어\n내용을 입력하세요.',
+        x: c.x - 110 + (Math.random() * 40 - 20),
+        y: c.y - 60 + (Math.random() * 40 - 20)
+    });
+    syncMemos(); saveToStorage();
+}
+
+async function addLink(url) {
+    const c = viewCenter();
+    const tempId = 'memo_' + Date.now();
+    state.data.memos.push({ id: tempId, type: 'text', content: '⏳ 정보 불러오는 중...', x: c.x - 150, y: c.y - 80 });
+    syncMemos();
+
+    try {
+        const res = await fetch(`https://api.microlink.io?url=${encodeURIComponent(url)}`);
+        const json = await res.json();
+        if (json.status !== 'success') throw new Error();
+        const meta = json.data;
+        const idx = state.data.memos.findIndex(m => m.id === tempId);
+        if (idx !== -1) {
+            const placeholder = state.data.memos[idx];
+            state.data.memos[idx] = {
+                id: tempId, type: 'link', url: url,
+                meta: {
+                    title: meta.title || url,
+                    desc: meta.description || '',
+                    image: meta.image ? meta.image.url : null,
+                    publisher: meta.publisher || new URL(url).hostname
+                },
+                x: placeholder.x, y: placeholder.y
+            };
+        }
+    } catch (e) {
+        const idx = state.data.memos.findIndex(m => m.id === tempId);
+        if (idx !== -1) state.data.memos[idx].content = url;
+    }
+    syncMemos(); saveToStorage();
+}
+
+function pairSelected(verb) {
+    const ids = [...state.selected];
+    if (ids.length !== 2) { toast(`${verb} 메모 2개를 선택하세요`); return null; }
+    return ids;
+}
+
+function connectSelected() {
+    const ids = pairSelected('연결할');
+    if (!ids) return;
+    const exists = state.data.connections.some(c =>
+        (c.from === ids[0] && c.to === ids[1]) || (c.from === ids[1] && c.to === ids[0])
+    );
+    if (exists) { toast('이미 연결되어 있습니다'); return; }
+    state.data.connections.push({ from: ids[0], to: ids[1] });
+    state.selected.clear();
+    syncMemos(); saveToStorage();
+}
+
+function disconnectSelected() {
+    const ids = pairSelected('연결을 끊을');
+    if (!ids) return;
+    const before = state.data.connections.length;
+    state.data.connections = state.data.connections.filter(c =>
+        !((c.from === ids[0] && c.to === ids[1]) || (c.from === ids[1] && c.to === ids[0]))
+    );
+    if (state.data.connections.length === before) { toast('두 메모는 연결되어 있지 않습니다'); return; }
+    state.selected.clear();
+    syncMemos(); saveToStorage();
+}
+
+function removeMemos(ids) {
+    state.data.memos = state.data.memos.filter(m => !ids.has(m.id));
+    state.data.connections = state.data.connections.filter(c => !ids.has(c.from) && !ids.has(c.to));
+    ids.forEach(id => state.selected.delete(id));
+    syncMemos(); saveToStorage();
+}
+
+// VR 안에서는 confirm()을 쓸 수 없으니 두 번 눌러서 삭제
+function deleteSelected() {
+    if (!state.selected.size) { toast('삭제할 메모를 선택하세요'); return; }
+    if (Date.now() < state.pendingDelete) {
+        state.pendingDelete = 0;
+        removeMemos(new Set(state.selected));
+        toast('삭제했습니다');
+    } else {
+        state.pendingDelete = Date.now() + 3000;
+        toast(`한 번 더 누르면 ${state.selected.size}개를 삭제합니다`);
+    }
+}
+
+function toggleSelect(id) {
+    if (state.selected.has(id)) state.selected.delete(id);
+    else state.selected.add(id);
+    syncMemos();
+}
+
+function toggleTheme() {
+    state.theme = state.theme === 'dark' ? 'light' : 'dark';
+    localStorage.setItem('lightdark', state.theme);
+    applyThemeClass();
+    buildEnvironment();
+    syncMemos();
+}
+
+function applyThemeClass() {
+    document.body.classList.toggle('dark-mode', state.theme === 'dark');
+    document.body.classList.toggle('light-mode', state.theme === 'light');
+}
+
+function saveToStorage() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
+}
+
+function loadFromStorage() {
+    try {
+        const d = JSON.parse(localStorage.getItem(STORAGE_KEY));
+        if (d && Array.isArray(d.memos)) state.data = { memos: d.memos, connections: d.connections || [] };
+    } catch (e) { /* 저장된 데이터가 없거나 깨짐 */ }
+    const ids = new Set(state.data.memos.map(m => m.id));
+    [...state.selected].forEach(id => { if (!ids.has(id)) state.selected.delete(id); });
+}
+
+// ---------------------------------------------------------------
+// 키보드 입력이 필요한 작업은 VR 세션을 잠시 끝내고 2D 모달에서
+// ---------------------------------------------------------------
+const $ = s => document.querySelector(s);
+
+async function openEditor(mode, id = null) {
+    state.editorMode = mode;
+    state.editingId = id;
+    if (renderer.xr.isPresenting) await renderer.xr.getSession().end();
+
+    const memo = state.data.memos.find(m => m.id === id);
+    const ta = $('#editor-textarea');
+    if (mode === 'link-new') {
+        $('#editor-title').innerText = '북마크 추가';
+        ta.value = '';
+        ta.placeholder = '북마크할 URL (유튜브, 블로그 등)';
+    } else {
+        $('#editor-title').innerText = '메모 편집';
+        ta.value = memo.type === 'link' ? memo.url : memo.content;
+        ta.placeholder = '';
+    }
+    // URL은 항상 영문으로, 메모는 마지막으로 쓰던 모드로
+    const isUrl = mode === 'link-new' || memo?.type === 'link';
+    ime.set(isUrl ? false : localStorage.getItem('vr_ime') !== 'off', false);
+    $('#editor-delete').classList.toggle('none', mode !== 'memo');
+    $('#editor-open').classList.toggle('none', !(memo && memo.type === 'link'));
+    $('#editor-modal').classList.add('active');
+    ta.focus();
+}
+
+function closeEditor() {
+    $('#editor-modal').classList.remove('active');
+    state.editorMode = null;
+    state.editingId = null;
+    if (state.enteredOnce) {
+        $('#enter-vr').innerText = 'VR로 돌아가기';
+        $('#panel').classList.remove('collapsed');
+    }
+}
+
+// ---------------------------------------------------------------
+// 자체 한글 입력기 (두벌식): 퀘스트 키보드는 한글이 없어서
+// 알파벳 자판을 누르면 한글 자모로 바꿔 조합함. 예) dkssud → 안녕
+// ---------------------------------------------------------------
+const KEYMAP = {
+    q: 'ㅂ', w: 'ㅈ', e: 'ㄷ', r: 'ㄱ', t: 'ㅅ', y: 'ㅛ', u: 'ㅕ', i: 'ㅑ', o: 'ㅐ', p: 'ㅔ',
+    a: 'ㅁ', s: 'ㄴ', d: 'ㅇ', f: 'ㄹ', g: 'ㅎ', h: 'ㅗ', j: 'ㅓ', k: 'ㅏ', l: 'ㅣ',
+    z: 'ㅋ', x: 'ㅌ', c: 'ㅊ', v: 'ㅍ', b: 'ㅠ', n: 'ㅜ', m: 'ㅡ',
+    Q: 'ㅃ', W: 'ㅉ', E: 'ㄸ', R: 'ㄲ', T: 'ㅆ', O: 'ㅒ', P: 'ㅖ'
+};
+const CHO = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ';
+const JUNG = 'ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ';
+const JONG = ['', 'ㄱ', 'ㄲ', 'ㄳ', 'ㄴ', 'ㄵ', 'ㄶ', 'ㄷ', 'ㄹ', 'ㄺ', 'ㄻ', 'ㄼ', 'ㄽ', 'ㄾ', 'ㄿ', 'ㅀ', 'ㅁ', 'ㅂ', 'ㅄ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
+const VOWEL_COMB = { 'ㅗㅏ': 'ㅘ', 'ㅗㅐ': 'ㅙ', 'ㅗㅣ': 'ㅚ', 'ㅜㅓ': 'ㅝ', 'ㅜㅔ': 'ㅞ', 'ㅜㅣ': 'ㅟ', 'ㅡㅣ': 'ㅢ' };
+const JONG_COMB = { 'ㄱㅅ': 'ㄳ', 'ㄴㅈ': 'ㄵ', 'ㄴㅎ': 'ㄶ', 'ㄹㄱ': 'ㄺ', 'ㄹㅁ': 'ㄻ', 'ㄹㅂ': 'ㄼ', 'ㄹㅅ': 'ㄽ', 'ㄹㅌ': 'ㄾ', 'ㄹㅍ': 'ㄿ', 'ㄹㅎ': 'ㅀ', 'ㅂㅅ': 'ㅄ' };
+const JONG_SPLIT = Object.fromEntries(Object.entries(JONG_COMB).map(([k, v]) => [v, [k[0], k[1]]]));
+
+// 자모 배열을 완성형 한글 문자열로 조립
+function assembleHangul(jamos) {
+    let out = '', cho = '', jung = '', jong = '';
+    const flush = () => {
+        out += cho && jung
+            ? String.fromCharCode(0xAC00 + (CHO.indexOf(cho) * 21 + JUNG.indexOf(jung)) * 28 + JONG.indexOf(jong))
+            : cho + jung;
+        cho = jung = jong = '';
+    };
+    for (const j of jamos) {
+        if (JUNG.includes(j)) {
+            if (jong) {
+                // 받침의 (마지막) 자음을 다음 글자의 초성으로 넘김: 않 + ㅏ → 안하
+                const [keep, move] = JONG_SPLIT[jong] || ['', jong];
+                jong = keep; flush(); cho = move; jung = j;
+            } else if (jung) {
+                if (VOWEL_COMB[jung + j]) jung = VOWEL_COMB[jung + j];
+                else { flush(); jung = j; }
+            } else jung = j;
+        } else if (cho && jung) {
+            if (!jong && JONG.includes(j)) jong = j;
+            else if (jong && JONG_COMB[jong + j]) jong = JONG_COMB[jong + j];
+            else { flush(); cho = j; }
+        } else {
+            if (cho || jung) flush();
+            cho = j;
+        }
+    }
+    flush();
+    return out;
+}
+
+const ime = {
+    on: localStorage.getItem('vr_ime') !== 'off',
+    seq: [], len: 0, caret: -1,
+    ta: $('#editor-textarea'),
+    reset() { this.seq = []; this.len = 0; this.caret = -1; },
+    render() {
+        const ta = this.ta, end = ta.selectionStart;
+        const text = assembleHangul(this.seq);
+        ta.setRangeText(text, end - this.len, end, 'end');
+        this.len = text.length;
+        this.caret = ta.selectionStart;
+        if (!this.seq.length) this.reset();
+    },
+    push(jamo) {
+        const ta = this.ta;
+        if (ta.selectionStart !== ta.selectionEnd) ta.setRangeText('', ta.selectionStart, ta.selectionEnd, 'end');
+        if (ta.selectionStart !== this.caret) this.reset();
+        this.seq.push(jamo);
+        this.render();
+    },
+    // 조합 중일 때 백스페이스는 자모 하나씩 지움
+    pop() {
+        this.seq.pop();
+        this.render();
+    },
+    set(on, remember = true) {
+        this.on = on;
+        this.reset();
+        if (remember) localStorage.setItem('vr_ime', on ? 'on' : 'off');
+        $('#ime-toggle').innerText = on ? '한' : 'EN';
+        $('#ime-toggle').classList.toggle('primary', on);
+        $('#ime-hint').innerText = on
+            ? '한글 모드: 영문 자판으로 치면 두벌식 한글로 바뀝니다 (예: dkssud → 안녕). Shift+Space 또는 오른쪽 버튼으로 전환'
+            : '영문 모드: 입력한 그대로 들어갑니다. Shift+Space 또는 오른쪽 버튼으로 전환';
+    }
+};
+
+ime.ta.addEventListener('beforeinput', e => {
+    if (!ime.on) return;
+    const ta = ime.ta;
+    if (e.inputType === 'insertText' && e.data && [...e.data].every(ch => KEYMAP[ch] || KEYMAP[ch.toLowerCase()])) {
+        e.preventDefault();
+        for (const ch of e.data) ime.push(KEYMAP[ch] || KEYMAP[ch.toLowerCase()]);
+    } else if (e.inputType === 'deleteContentBackward' && ime.seq.length
+        && ta.selectionStart === ta.selectionEnd && ta.selectionStart === ime.caret) {
+        e.preventDefault();
+        ime.pop();
+    } else {
+        ime.reset();
+    }
+});
+ime.ta.addEventListener('keydown', e => {
+    if (e.key === ' ' && e.shiftKey) { e.preventDefault(); ime.set(!ime.on); }
+});
+ime.ta.addEventListener('pointerdown', () => ime.reset());
+$('#ime-toggle').onclick = () => { ime.set(!ime.on); ime.ta.focus(); };
+ime.set(ime.on, false);
+
+$('#editor-save').onclick = () => {
+    const val = $('#editor-textarea').value;
+    if (state.editorMode === 'link-new') {
+        if (val.trim()) addLink(val.trim());
+    } else {
+        const memo = state.data.memos.find(m => m.id === state.editingId);
+        if (memo) {
+            if (memo.type === 'link') memo.url = val;
+            else memo.content = val;
+            syncMemos(); saveToStorage();
+        }
+    }
+    closeEditor();
+};
+$('#editor-cancel').onclick = closeEditor;
+$('#editor-delete').onclick = () => {
+    if (confirm('삭제하시겠습니까?')) {
+        removeMemos(new Set([state.editingId]));
+        closeEditor();
+    }
+};
+$('#editor-open').onclick = () => {
+    const memo = state.data.memos.find(m => m.id === state.editingId);
+    if (memo) window.open(memo.url, '_blank');
+};
+
+// ---------------------------------------------------------------
+// 포인터 (VR 컨트롤러/손 2개 + PC 마우스)
+// ---------------------------------------------------------------
+const raycaster = new THREE.Raycaster();
+const mouse = { type: 'mouse', ndc: new THREE.Vector2(), hover: null, drag: null, look: null };
+const pointers = [mouse];
+
+function castRay(p) {
+    if (p.type === 'xr') {
+        // 핀치/트리거 이벤트 순간의 자세가 반영되도록 행렬을 먼저 갱신
+        p.obj.updateMatrixWorld(true);
+        raycaster.setFromXRController(p.obj);
+    } else raycaster.setFromCamera(p.ndc, camera);
+    return raycaster.ray.clone();
+}
+
+function pick(ray) {
+    raycaster.ray.copy(ray);
+    const targets = [toolbar.mesh, ...memoGroup.children];
+    return raycaster.intersectObjects(targets, false)[0] || null;
+}
+
+function pointerPress(p, toggle = false) {
+    const hit = pick(castRay(p));
+    if (hit && hit.object === toolbar.mesh) {
+        const id = toolAt(hit.uv);
+        if (id) pressTool(id);
+        return true;
+    }
+    if (hit) {
+        const id = hit.object.userData.id;
+        if (toggle || state.multiSelect) { toggleSelect(id); return true; }
+        // 2D 보드와 같은 규칙: 선택된 메모를 누르면 해제, 아니면 단독 선택 후 끌기
+        const was = state.selected.has(id);
+        state.selected.clear();
+        if (!was) state.selected.add(id);
+        const c = rayToBoardCyl(castRay(p)), e = entries.get(id);
+        if (c && e) p.drag = { type: 'memo', id, dTheta: e.theta - c.theta, dH: e.hgt - c.h, last: c.theta, moved: false };
+        syncMemos();
+        return true;
+    }
+    if (p.type === 'xr') {
+        const c = rayToBoardCyl(castRay(p));
+        if (c) p.drag = { type: 'pan', theta: c.theta, h: c.h };
+        return true;
+    }
+    return false;
+}
+
+function pointerRelease(p) {
+    if (p.drag && p.drag.type === 'memo' && p.drag.moved) saveToStorage();
+    p.drag = null;
+}
+
+function updateDrag(p, ray) {
+    const c = rayToBoardCyl(ray);
+    if (!c) return;
+    const d = p.drag;
+    if (d.type === 'memo') {
+        const idx = state.data.memos.findIndex(m => m.id === d.id);
+        const memo = state.data.memos[idx], e = entries.get(d.id);
+        if (!memo || !e) { p.drag = null; return; }
+        const theta = d.last + wrapAngle(c.theta - d.last);
+        d.last = theta;
+        const pos = toCanvas(theta + d.dTheta, c.h + d.dH);
+        memo.x = pos.x - e.w / 2;
+        memo.y = pos.y - e.h / 2;
+        d.moved = true;
+        positionEntry(e, memo, idx);
+        rebuildLines();
+    } else if (d.type === 'pan') {
+        // 잡은 지점이 계속 광선 아래에 있도록 보드를 돌림
+        board.rotation.y += wrapAngle(d.theta - c.theta);
+        const dh = c.h - d.h;
+        if (Math.abs(dh) < 1) board.position.y += dh;
+    }
+}
+
+// --- VR 컨트롤러 ---
+const controllerModels = new XRControllerModelFactory();
+const handModels = new XRHandModelFactory();
+// 광선: 1px 선은 헤드셋에서 거의 안 보여서, 끝으로 갈수록 굵어지는 빔으로 그림
+const beamGeo = new THREE.CylinderGeometry(0.004, 0.0012, 1, 8, 1, true);
+beamGeo.rotateX(-Math.PI / 2);
+beamGeo.translate(0, 0, -0.5);
+const cursorGeo = new THREE.RingGeometry(0.012, 0.022, 32);
+
+for (let i = 0; i < 2; i++) {
+    const obj = renderer.xr.getController(i);
+    const p = { type: 'xr', obj, hover: null, drag: null, connected: false, poking: null };
+    p.beam = new THREE.Mesh(beamGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55, depthWrite: false }));
+    p.beam.scale.z = 3;
+    obj.add(p.beam);
+    // 커서는 다른 물체에 가려지지 않게 항상 위에 그림
+    p.cursor = new THREE.Mesh(cursorGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide, depthTest: false, transparent: true }));
+    p.cursor.renderOrder = 999;
+    p.cursor.visible = false;
+    scene.add(p.cursor);
+
+    obj.addEventListener('connected', () => { p.connected = true; });
+    obj.addEventListener('disconnected', () => { p.connected = false; p.drag = null; p.cursor.visible = false; });
+    obj.addEventListener('selectstart', () => pointerPress(p));
+    obj.addEventListener('selectend', () => pointerRelease(p));
+    obj.addEventListener('squeezestart', () => {
+        if (p.hover && p.hover.object !== toolbar.mesh) toggleSelect(p.hover.object.userData.id);
+    });
+    scene.add(obj);
+
+    const grip = renderer.xr.getControllerGrip(i);
+    grip.add(controllerModels.createControllerModel(grip));
+    scene.add(grip);
+    const hand = renderer.xr.getHand(i);
+    hand.add(handModels.createHandModel(hand, 'mesh'));
+    scene.add(hand);
+    p.hand = hand;
+
+    pointers.push(p);
+}
+
+function handleSticks(dt) {
+    const session = renderer.xr.getSession();
+    if (!session) return;
+    for (const src of session.inputSources) {
+        const gp = src.gamepad;
+        if (!gp || gp.axes.length < 4) continue;
+        const ax = gp.axes[2], ay = gp.axes[3];
+        if (Math.abs(ax) > 0.2) board.rotation.y += ax * dt * 1.2;
+        if (Math.abs(ay) > 0.2) board.position.y += ay * dt * 0.8;
+    }
+}
+
+// 손 추적: 검지 끝으로 툴바 버튼을 직접 눌러도 동작
+const _tip = new THREE.Vector3();
+function pokeToolbar(p) {
+    const tip = p.hand && p.hand.joints && p.hand.joints['index-finger-tip'];
+    if (!tip || !tip.visible) { p.poking = null; return null; }
+    tip.getWorldPosition(_tip);
+    const local = toolbar.mesh.worldToLocal(_tip);
+    const w = TB.M, h = TB.M * TB.H / TB.W;
+    const inside = Math.abs(local.x) <= w / 2 && Math.abs(local.y) <= h / 2;
+    if (!inside || local.z > 0.04 || local.z < -0.05) { p.poking = null; return null; }
+    const id = toolAt({ x: local.x / w + 0.5, y: local.y / h + 0.5 });
+    if (local.z < 0.012) {
+        if (id && p.poking !== id) pressTool(id);
+        p.poking = id || 'miss';
+    } else if (local.z > 0.025) {
+        p.poking = null;
+    }
+    return id;
+}
+
+function updatePointers() {
+    const presenting = renderer.xr.isPresenting;
+    const hovered = new Set();
+    let toolHover = null;
+    for (const p of pointers) {
+        const active = p.type === 'xr' ? presenting && p.connected : !presenting;
+        if (!active) { p.hover = null; continue; }
+        const ray = castRay(p);
+        if (p.drag) updateDrag(p, ray);
+        const hit = pick(ray);
+        p.hover = hit;
+        if (hit) {
+            if (hit.object === toolbar.mesh) toolHover = toolAt(hit.uv) || toolHover;
+            else hovered.add(hit.object.userData.id);
+        }
+        if (p.type === 'xr') {
+            const th = T();
+            p.beam.scale.z = hit ? hit.distance : 3;
+            p.beam.material.color.set(hit ? th.accentSnd : 0xffffff);
+            p.cursor.visible = !!hit;
+            if (hit) {
+                p.cursor.position.copy(hit.point);
+                p.cursor.lookAt(ray.origin);
+                p.cursor.scale.setScalar(Math.max(0.6, hit.distance / 1.5));
+                p.cursor.material.color.set(p.drag ? th.accent : 0xffffff);
+            }
+            const poked = pokeToolbar(p);
+            if (poked) toolHover = poked;
+        }
+    }
+    for (const [id, e] of entries) {
+        const s = hovered.has(id) ? 1.06 : 1;
+        e.mesh.scale.lerp(new THREE.Vector3(s, s, 1), 0.3);
+    }
+    toolbar.hover = toolHover;
+    renderer.domElement.style.cursor = mouse.look ? 'grabbing' : mouse.hover ? 'pointer' : 'grab';
+}
+
+// --- PC 마우스 ---
+const cvs = renderer.domElement;
+function setNdc(e) {
+    mouse.ndc.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+}
+cvs.addEventListener('pointermove', e => {
+    setNdc(e);
+    if (mouse.look) {
+        look.yaw -= (e.clientX - mouse.look.x) * 0.004;
+        look.pitch = THREE.MathUtils.clamp(look.pitch - (e.clientY - mouse.look.y) * 0.004, -1.3, 1.3);
+        mouse.look = { x: e.clientX, y: e.clientY };
+        camera.rotation.set(look.pitch, look.yaw, 0);
+    }
+});
+cvs.addEventListener('pointerdown', e => {
+    if (renderer.xr.isPresenting) return;
+    setNdc(e);
+    if (e.button !== 0 && e.button !== 2) return;
+    const handled = pointerPress(mouse, e.button === 2 || e.shiftKey);
+    if (!handled && e.button === 0) mouse.look = { x: e.clientX, y: e.clientY };
+});
+window.addEventListener('pointerup', () => { pointerRelease(mouse); mouse.look = null; });
+cvs.addEventListener('wheel', e => { board.position.y += e.deltaY * 0.001; }, { passive: true });
+window.oncontextmenu = () => false;
+
+window.addEventListener('resize', () => {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+});
+
+// 2D 보드를 다른 탭에서 고치면 바로 반영
+window.addEventListener('storage', e => {
+    if (e.key === STORAGE_KEY && !pointers.some(p => p.drag)) { loadFromStorage(); syncMemos(); }
+    if (e.key === 'lightdark' && e.newValue && e.newValue !== state.theme) toggleTheme();
+});
+
+// ---------------------------------------------------------------
+// VR 세션
+// ---------------------------------------------------------------
+let recenterFrames = -1;
+
+async function enterVR() {
+    try {
+        const session = await navigator.xr.requestSession('immersive-vr', {
+            optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking']
+        });
+        await renderer.xr.setSession(session);
+        session.addEventListener('end', onSessionEnd);
+        $('#panel').classList.add('hidden');
+        recenterFrames = 0;
+    } catch (err) {
+        toast('VR을 시작하지 못했습니다');
+        console.error(err);
+    }
+}
+
+function onSessionEnd() {
+    state.enteredOnce = true;
+    pointers.forEach(p => { p.drag = null; if (p.cursor) p.cursor.visible = false; });
+    resetDesktopCamera();
+    placeToolbar();
+    $('#panel').classList.remove('hidden');
+    $('#enter-vr').innerText = 'VR로 돌아가기';
+}
+
+async function setupEnterButton() {
+    const btn = $('#enter-vr');
+    const ok = navigator.xr && await navigator.xr.isSessionSupported('immersive-vr').catch(() => false);
+    if (ok) {
+        btn.disabled = false;
+        btn.innerText = 'VR 입장';
+        btn.onclick = enterVR;
+    } else {
+        btn.innerText = window.isSecureContext ? 'VR 미지원 기기 (PC 미리보기)' : 'HTTPS에서만 VR 사용 가능';
+    }
+}
+
+function updateStatus() {
+    const msg = Date.now() < state.toastUntil ? ` · ${state.toast}` : '';
+    $('#status-bar').innerText = `별자리 메모보드 VR - 메모 ${state.data.memos.length}개${msg}`;
+}
+
+// ---------------------------------------------------------------
+// 파일 저장/열기 (2D 보드와 같은 형식)
+// ---------------------------------------------------------------
+$('#export').onclick = () => {
+    const blob = new Blob([JSON.stringify(state.data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `constelgrid_${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+};
+$('#import').onclick = () => $('#file-input').click();
+$('#file-input').onchange = function () {
+    const file = this.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+        try {
+            state.data = JSON.parse(e.target.result);
+            state.data.connections ||= [];
+            state.selected.clear();
+            saveToStorage();
+            syncMemos();
+            recenter();
+        } catch (err) { alert('파일 오류'); }
+    };
+    reader.readAsText(file);
+    this.value = '';
+};
+$('#collapse').onclick = () => {
+    const p = $('#panel');
+    p.classList.toggle('collapsed');
+    $('#collapse').innerText = p.classList.contains('collapsed') ? '펼치기' : '접기';
+};
+
+// ---------------------------------------------------------------
+// 시작
+// ---------------------------------------------------------------
+async function init() {
+    applyThemeClass();
+    buildEnvironment();
+    // 캔버스에 글자를 그리기 전에 웹폰트를 먼저 받아둠
+    await Promise.race([
+        Promise.all([document.fonts.load(`400 14px ${FONT}`, '가A'), document.fonts.load(`700 14px ${FONT}`, '가A')]),
+        new Promise(r => setTimeout(r, 4000))
+    ]).catch(() => {});
+    loadFromStorage();
+    syncMemos();
+    recenter();
+    setupEnterButton();
+
+    const clock = new THREE.Clock();
+    renderer.setAnimationLoop(() => {
+        const dt = Math.min(clock.getDelta(), 0.1);
+        // 헤드셋 위치가 실제로 잡힌 뒤에 정렬 (초기 몇 프레임은 자세가 비어 있을 수 있음)
+        // 첫 입장에는 보드 전체를 정면으로, 다시 들어올 때는 툴바만 앞으로
+        if (recenterFrames >= 0 && renderer.xr.isPresenting) {
+            recenterFrames++;
+            const camY = camera.getWorldPosition(new THREE.Vector3()).y;
+            if ((recenterFrames > 5 && camY > 0.5) || recenterFrames > 120) {
+                recenterFrames = -1;
+                if (state.enteredOnce) placeToolbar(); else recenter();
+            }
+        }
+        handleSticks(dt);
+        updatePointers();
+        drawToolbar();
+        renderer.render(scene, camera);
+    });
+}
+
+init();
+</script>
+</body>
+</html>
