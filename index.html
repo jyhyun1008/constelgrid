@@ -438,7 +438,8 @@ const app = {
         } catch (e) {
             let host = '';
             try { host = new URL(memo.url).hostname; } catch (e2) {}
-            memo.meta = { title: memo.url, desc: '', image: null, publisher: host };
+            // 실패(하루 요청 한도 등)는 표시해 두고, 다음에 페이지를 열 때 다시 시도
+            memo.meta = { title: memo.url, desc: '', image: null, publisher: host, failed: true };
         }
         this.render(); this.saveToStorage();
     },
@@ -711,6 +712,9 @@ const app = {
 
         let innerHTML = '';
         let tools = '';
+        if (memo.type === 'link' && memo.meta && memo.meta.failed && !memo._loading) {
+            memo._loading = true; this.fetchLinkMeta(memo);
+        }
         if (memo.type === 'link' && !memo.meta) {
             if (!memo._loading) { memo._loading = true; this.fetchLinkMeta(memo); }
             innerHTML = `<div class="memo-content" style="padding:16px">⏳ 정보 불러오는 중...</div>`;
@@ -890,6 +894,19 @@ const app = {
         })
         return await res.json()
     },
+    // 드라이브 파일은 보통 바로 받을 수 있음. 서버가 막아 둔 경우에만 외부 중계(allorigins)를 거침
+    async downloadDriveFile(url) {
+        try {
+            const res = await fetch(url, { credentials: 'omit' })
+            if (!res.ok) throw new Error(res.status)
+            return JSON.parse(await res.text())
+        } catch (e) {
+            const data = await fetch('https://api.allorigins.win/get?url=' + encodeURIComponent(url))
+            const dataJSON = await data.json()
+            const splitted = dataJSON.contents.split('base64,')[1].split('"')[0]
+            return JSON.parse(decodeURIComponent(escape(atob(splitted))))
+        }
+    },
     async fetchData() {
         if (localStorage.getItem('accessToken')) {
             if (confirm("불러오시겠습니까? 기존 캔버스를 덮어씌웁니다.")) {
@@ -898,13 +915,7 @@ const app = {
                 // 예전 이름으로만 저장돼 있으면 그걸 불러옴 (예전 파일은 백업으로 남겨 둠)
                 if (fileJSON.length === 0) fileJSON = await this.findDriveFile(`constelgrid_test.json`)
                 if (fileJSON.length > 0) {
-                    const proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(fileJSON[0].url);
-                    const data = await fetch(proxyUrl)
-                    const dataJSON = await data.json()
-                    const splitted = dataJSON.contents.split('base64,')[1].split('"')[0]
-
-                    const decodedData = decodeURIComponent(escape(atob(splitted)))
-                    const parsedData = JSON.parse(decodedData)
+                    const parsedData = await this.downloadDriveFile(fileJSON[0].url)
 
                     this.data = parsedData
                     this.migrateWebs()
