@@ -279,9 +279,7 @@
         }
         #file-input { display: none; }
 
-        /* 퀘스트 앱에서 연 웹 창: 2D에서는 카드로 보이고 누르면 새 탭 */
-        .memo.web { border: 1px solid var(--accent-color); }
-        .memo.web.selected { border: 2px solid var(--accent-color); }
+        /* 퀘스트에서 웹 창으로 열려 있는 북마크 표시 */
         .web-badge {
             position: absolute; top: 32px; left: 8px; z-index: 3;
             display: flex; align-items: center; gap: 4px;
@@ -289,12 +287,7 @@
             font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px;
             pointer-events: none;
         }
-        .web-play {
-            position: absolute; top: 74px; left: 50%; transform: translateX(-50%); z-index: 3;
-            width: 48px; height: 48px; border-radius: 50%;
-            background: #000a; color: white; font-size: 20px;
-            display: flex; align-items: center; justify-content: center; pointer-events: none;
-        }
+
     </style>
 </head>
 <body class="dark-mode">
@@ -403,18 +396,48 @@ const app = {
         }
     },
 
-    // --- 퀘스트 앱의 웹 창 (data.spatial.webs) ---
-    webs() {
-        return (this.data.spatial && this.data.spatial.webs) || [];
+    // 퀘스트의 웹 창 = 북마크 메모(type: link)에 spatial.window 표시가 붙은 것.
+    // 예전 형식(data.spatial.webs)은 북마크로 옮김
+    migrateWebs() {
+        const webs = (this.data.spatial && this.data.spatial.webs) || [];
+        webs.forEach(w => {
+            if (this.data.memos.some(m => m.id === w.id)) return;
+            const memo = { id: w.id, type: 'link', url: w.url, meta: w.meta || null, spatial: { ...(w.spatial || {}), window: true } };
+            if (typeof w.x === 'number') { memo.x = w.x; memo.y = w.y; }
+            this.data.memos.push(memo);
+        });
+        if (this.data.spatial) delete this.data.spatial.webs;
     },
-    // 메모와 웹 창을 같은 방식으로 찾기 (선 연결, 끌기, 편집)
     findItem(id) {
-        return this.data.memos.find(m => m.id === id) || this.webs().find(w => w.id === id);
+        return this.data.memos.find(m => m.id === id);
     },
     itemSize(item) {
-        if (item.id.startsWith('web_')) return { w: 300, h: 300 };
         return item.type === 'link' ? { w: 300, h: 250 } : { w: 220, h: 120 };
     },
+    // 제목/대표 이미지가 아직 없는 북마크는 불러와서 채움
+    async fetchLinkMeta(memo) {
+        try {
+            const res = await fetch(`https://api.microlink.io?url=${encodeURIComponent(memo.url)}`);
+            const json = await res.json();
+            if (json.status !== 'success') throw new Error();
+            const meta = json.data;
+            memo.meta = {
+                title: meta.title || memo.url,
+                desc: meta.description || '',
+                image: meta.image ? meta.image.url : null,
+                publisher: meta.publisher || new URL(memo.url).hostname
+            };
+        } catch (e) {
+            let host = '';
+            try { host = new URL(memo.url).hostname; } catch (e2) {}
+            memo.meta = { title: memo.url, desc: '', image: null, publisher: host };
+        }
+        this.render(); this.saveToStorage();
+    },
+    escape(s) {
+        return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    },
+
     /**
      * 퀘스트에서만 만든 것(2D 위치 없음)은 VR 위치를 평면에 정사영해서 2D 위치를 정함.
      * 투영면: VR 속 물건들이 가로로 퍼진 방향(x,z의 주성분)을 가로축, 높이를 세로축으로 하는 수직 평면.
@@ -422,7 +445,7 @@ const app = {
      */
     layoutFromSpatial() {
         const hasXY = i => typeof i.x === 'number' && typeof i.y === 'number';
-        const items = [...this.data.memos, ...this.webs()];
+        const items = this.data.memos;
         const missing = items.filter(i => !hasXY(i));
         if (!missing.length) return;
 
@@ -633,7 +656,10 @@ const app = {
             el.dataset.id = memo.id;
 
             let innerHTML = '';
-            if (memo.type === 'link') {
+            if (memo.type === 'link' && !memo.meta) {
+                if (!memo._loading) { memo._loading = true; this.fetchLinkMeta(memo); }
+                innerHTML = `<div class="memo-content" style="padding:16px">⏳ 정보 불러오는 중...</div>`;
+            } else if (memo.type === 'link') {
                 const imgTag = memo.meta.image ? `<img src="${memo.meta.image}" class="link-image">` : `<div class="link-image" style="background:var(--lightgray-color);"></div>`;
                 innerHTML = `
                     ${imgTag}
@@ -642,6 +668,10 @@ const app = {
                         <div class="link-desc">${memo.meta.desc}</div>
                         <div class="link-domain">🔗 ${memo.meta.publisher}</div>
                     </div>
+                    ${memo.spatial && memo.spatial.window ? `<div class="web-badge">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg>
+                        웹 창
+                    </div>` : ''}
                 `;
             } else {
                 const md = typeof marked !== 'undefined' ? marked.parse(memo.content) : memo.content;
@@ -665,47 +695,7 @@ const app = {
             memosLayer.appendChild(el);
         });
 
-        // 퀘스트 앱에서 연 웹 창
-        this.webs().forEach(web => {
-            if (!web.meta && !web._loading) { web._loading = true; this.fetchWebMeta(web); }
-            const meta = web.meta || {};
-            const yt = this.youtubeId(web.url);
-            let host = '';
-            try { host = new URL(web.url).hostname.replace(/^www\./, ''); } catch (e) {}
-            const image = yt ? `https://img.youtube.com/vi/${yt}/hqdefault.jpg` : meta.image;
-
-            const el = document.createElement('div');
-            el.className = `memo link web ${this.ui.selectedMemoIds.has(web.id) ? 'selected' : ''}`;
-            el.style.left = `${web.x}px`;
-            el.style.top = `${web.y}px`;
-            el.dataset.id = web.id;
-            el.innerHTML = `
-                <div class="memo-drag-handle"></div>
-                <div class="memo-tools">
-                    <button class="tool-btn edit-btn">✎</button>
-                </div>
-                <div class="web-badge">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg>
-                    웹 창
-                </div>
-                ${yt ? '<div class="web-play">▶</div>' : ''}
-                ${image ? `<img src="${this.escape(image)}" class="link-image">` : `<div class="link-image" style="background:var(--lightgray-color);"></div>`}
-                <div class="link-info">
-                    <div class="link-title">${this.escape(meta.title || host || web.url)}</div>
-                    <div class="link-desc">${this.escape(meta.desc)}</div>
-                    <div class="link-domain">🔗 ${this.escape(host)} · 새 탭에서 열기</div>
-                </div>
-                <a href="${this.escape(web.url)}" target="_blank" rel="noopener" style="position:absolute;top:24px;left:0;width:100%;bottom:0;" onclick="event.stopPropagation()"></a>
-            `;
-            el.addEventListener('mousedown', (e) => this.handleMemoMouseDown(e, web.id));
-            el.querySelector('.edit-btn').addEventListener('mousedown', (e) => {
-                e.stopPropagation(); e.preventDefault();
-                this.openEditor(web.id);
-            });
-            memosLayer.appendChild(el);
-        });
-
-        // 선 렌더링 (메모와 웹 창 모두)
+        // 선 렌더링
         this.data.connections.forEach(conn => {
             const from = this.findItem(conn.from);
             const to = this.findItem(conn.to);
@@ -801,7 +791,7 @@ const app = {
     openEditor(id) {
         this.ui.editingId = id;
         const memo = this.findItem(id);
-        const val = (memo.type === 'link' || id.startsWith('web_')) ? memo.url : memo.content;
+        const val = memo.type === 'link' ? memo.url : memo.content;
         document.getElementById('editor-textarea').value = val;
         document.getElementById('editor-modal').classList.add('active');
     },
@@ -814,8 +804,10 @@ const app = {
         const val = document.getElementById('editor-textarea').value;
         const memo = this.findItem(this.ui.editingId);
         if (memo) {
-            if (memo.id.startsWith('web_')) { memo.url = val.trim(); delete memo.meta; delete memo._loading; }
-            else if (memo.type === 'link') memo.url = val;
+            if (memo.type === 'link' && memo.url !== val.trim()) {
+                // 주소가 바뀌면 제목/이미지를 다시 불러옴
+                memo.url = val.trim(); delete memo.meta; delete memo._loading;
+            }
             else memo.content = val;
             this.render(); this.saveToStorage();
         }
@@ -824,9 +816,6 @@ const app = {
     deleteCurrentMemo() {
         if(confirm('삭제하시겠습니까?')) {
             this.data.memos = this.data.memos.filter(m => m.id !== this.ui.editingId);
-            if (this.data.spatial && this.data.spatial.webs) {
-                this.data.spatial.webs = this.data.spatial.webs.filter(w => w.id !== this.ui.editingId);
-            }
             this.data.connections = this.data.connections.filter(c => c.from !== this.ui.editingId && c.to !== this.ui.editingId);
             this.closeEditor(); this.render(); this.saveToStorage();
         }
@@ -865,6 +854,7 @@ const app = {
                     const parsedData = JSON.parse(decodedData)
 
                     this.data = parsedData
+                    this.migrateWebs()
                     this.render()
                     this.saveToStorage()
                 }
@@ -933,6 +923,7 @@ const app = {
             reader.onload = (e) => {
                 try {
                     this.data = JSON.parse(e.target.result);
+                    this.migrateWebs();
                     this.ui.camera = { x: 0, y: 0 };
                     this.updateTransform();
                     this.render(); this.saveToStorage();
@@ -947,7 +938,7 @@ const app = {
     },
     loadFromStorage() {
         const d = localStorage.getItem('mindgrid_final');
-        if(d) this.data = JSON.parse(d);
+        if(d) { this.data = JSON.parse(d); this.migrateWebs(); }
         this.render();
 }
 };
