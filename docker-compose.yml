@@ -3,7 +3,8 @@ services:
     build: .
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      # 서버마다 다른 포트는 .env 파일에 (git에 안 들어감). 예: PORT_BIND=127.0.0.1:3180
+      - "${PORT_BIND:-8080}:8080"
     environment:
       - DOWNLOADS_DIR=/downloads
     volumes:
