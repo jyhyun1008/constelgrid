@@ -423,18 +423,27 @@ const app = {
         return item.type === 'link' ? { w: 300, h: 250 } : { w: 220, h: 120 };
     },
     // 제목/대표 이미지가 아직 없는 북마크는 불러와서 채움
+    // 우리 서버(/api/meta)가 있으면 그걸 쓰고, 없으면(정적 호스팅) microlink
     async fetchLinkMeta(memo) {
         try {
-            const res = await fetch(`https://api.microlink.io?url=${encodeURIComponent(memo.url)}`);
-            const json = await res.json();
-            if (json.status !== 'success') throw new Error();
-            const meta = json.data;
-            memo.meta = {
-                title: meta.title || memo.url,
-                desc: meta.description || '',
-                image: meta.image ? meta.image.url : null,
-                publisher: meta.publisher || new URL(memo.url).hostname
-            };
+            try {
+                const res = await fetch(`/api/meta?url=${encodeURIComponent(memo.url)}`);
+                if (!res.ok || !(res.headers.get('content-type') || '').includes('json')) throw new Error();
+                const meta = await res.json();
+                if (meta.error) throw new Error();
+                memo.meta = meta;
+            } catch (e) {
+                const res = await fetch(`https://api.microlink.io?url=${encodeURIComponent(memo.url)}`);
+                const json = await res.json();
+                if (json.status !== 'success') throw new Error();
+                const meta = json.data;
+                memo.meta = {
+                    title: meta.title || memo.url,
+                    desc: meta.description || '',
+                    image: meta.image ? meta.image.url : null,
+                    publisher: meta.publisher || new URL(memo.url).hostname
+                };
+            }
         } catch (e) {
             let host = '';
             try { host = new URL(memo.url).hostname; } catch (e2) {}
@@ -894,12 +903,18 @@ const app = {
         })
         return await res.json()
     },
-    // 드라이브 파일은 보통 바로 받을 수 있음. 서버가 막아 둔 경우에만 외부 중계(allorigins)를 거침
+    // 드라이브 파일은 보통 바로 받을 수 있음. 미스키 서버가 막아 둔 경우에만 중계를 거침
+    // (우리 서버의 /api/fetch, 없으면 외부 중계 allorigins)
     async downloadDriveFile(url) {
         try {
             const res = await fetch(url, { credentials: 'omit' })
             if (!res.ok) throw new Error(res.status)
             return JSON.parse(await res.text())
+        } catch (e) {}
+        try {
+            const res = await fetch(`/api/fetch?url=${encodeURIComponent(url)}`)
+            if (!res.ok) throw new Error(res.status)
+            return await res.json()
         } catch (e) {
             const data = await fetch('https://api.allorigins.win/get?url=' + encodeURIComponent(url))
             const dataJSON = await data.json()
