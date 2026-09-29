@@ -478,7 +478,7 @@ const app = {
                 const dx = i.spatial.p[0] - mx, dz = i.spatial.p[2] - mz;
                 sxx += dx * dx; sxz += dx * dz; szz += dz * dz;
             });
-            // 퍼짐이 거의 없으면 처음 바라보던 방향(-z)의 오른쪽(+x)을 가로축으로
+            // 퍼짐이 거의 없으면 처음 바라보던 방향(+z)의 오른쪽(+x)을 가로축으로
             const angle = (sxx + szz > 1e-6) ? 0.5 * Math.atan2(2 * sxz, sxx - szz) : 0;
             let ax = Math.cos(angle), az = Math.sin(angle);
             const u = i => (i.spatial.p[0] - mx) * ax + (i.spatial.p[2] - mz) * az;
@@ -490,8 +490,9 @@ const app = {
                 const xx = refs.reduce((a, i) => a + i.x, 0) / refs.length;
                 refs.forEach(i => { corr += (u(i) - ux) * (i.x - xx); });
             } else {
-                // 원점에서 가운데를 보는 방향 f=(mx,mz)의 오른쪽은 (-mz, mx)
-                corr = ax * -mz + az * mx;
+                // 퀘스트 앱(Meta Spatial SDK)은 앞이 +z, 오른쪽이 +x인 좌표계라
+                // 원점에서 가운데를 보는 방향 f=(mx,mz)의 오른쪽은 (mz, -mx)
+                corr = ax * mz + az * -mx;
             }
             if (corr < 0) { ax = -ax; az = -az; }
             proj = i => ({ x: u(i) * PX_PER_M, y: -i.spatial.p[1] * PX_PER_M });
