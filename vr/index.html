@@ -69,10 +69,22 @@
         main { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
         a { color: inherit; }
 
-        header { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; }
-        header svg { width: 64px; height: 64px; flex: none; }
-        h1 { font-size: 26px; line-height: 1.3; }
-        header p { color: var(--sub-color); font-size: 15px; }
+        /* 머리 이미지: 본문보다 넓게, 이미지 안에 로고와 제목이 들어 있음 */
+        .hero { max-width: 1100px; margin: 0 auto 28px; }
+        .hero img {
+            display: block;
+            width: 100%;
+            height: auto;
+            aspect-ratio: 16 / 9;
+            border-radius: 24px;
+            border: 1px solid var(--line-color);
+            background: #1e1e30;
+        }
+        .visually-hidden {
+            position: absolute; width: 1px; height: 1px; overflow: hidden;
+            clip: rect(0 0 0 0); white-space: nowrap;
+        }
+        .lead { text-align: center; color: var(--sub-color); font-size: 16px; }
 
         .card {
             background: var(--card-bg);
@@ -125,26 +137,17 @@
     </style>
 </head>
 <body>
+<header class="hero">
+    <h1 class="visually-hidden">별자리 메모보드 퀘스트 앱</h1>
+    <img
+        src="/assets/quest-cover-1600.jpg"
+        srcset="/assets/quest-cover-1600.jpg 1600w, /assets/quest-cover-2560.jpg 2560w"
+        sizes="(max-width: 1132px) calc(100vw - 32px), 1100px"
+        width="1600" height="900"
+        alt="밤하늘에 웹 창과 메모 카드들이 떠 있고 별자리 선으로 이어진 그림, 가운데에 별자리 메모보드 로고와 제목">
+</header>
 <main>
-    <header>
-        <!-- 앱 로고: 지그재그로 이어진 별 네 개 -->
-        <svg viewBox="0 0 64 64" aria-hidden="true">
-            <rect width="64" height="64" rx="16" fill="#1e1e30"/>
-            <g stroke="#d8dbe7" stroke-opacity="0.7" stroke-width="2.2" stroke-linecap="round" fill="none">
-                <polyline points="12.8,24.4 27.5,39.5 38.9,20.5 53.2,42.8"/>
-            </g>
-            <g fill="#ffd66b">
-                <circle cx="12.8" cy="24.4" r="3.6"/>
-                <circle cx="27.5" cy="39.5" r="4.7"/>
-                <circle cx="38.9" cy="20.5" r="3.9"/>
-                <circle cx="53.2" cy="42.8" r="4.2"/>
-            </g>
-        </svg>
-        <div>
-            <h1>별자리 메모보드 퀘스트 앱</h1>
-            <p>메모와 웹 창을 내 방 공간에 띄워 두고 별자리처럼 잇는 메타 퀘스트 앱</p>
-        </div>
-    </header>
+    <p class="lead">메모와 웹 창을 내 방 공간에 띄워 두고 별자리처럼 잇는 메타 퀘스트 앱</p>
 
     <section class="card">
         <ul class="features">
