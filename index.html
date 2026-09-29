@@ -200,6 +200,25 @@
         .link-desc { font-size: 12px; color: #666; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
         .link-domain { font-size: 11px; color: #999; margin-top: 8px; text-transform: uppercase; }
 
+        /* 탭 그룹 (퀘스트에서 탭 여러 개를 묶은 웹 창): 제목 아래에 사이트 아이콘을 앱처럼 나열 */
+        .group-card { padding: 14px 14px 16px; }
+        .group-head { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 12px; }
+        .group-title { font-weight: bold; font-size: 15px; line-height: 1.3; flex: 1; min-width: 0; }
+        .web-badge.inline { position: static; flex: none; }
+        .group-title.empty { color: #999; }
+        .group-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px 6px; }
+        .group-item { display: flex; flex-direction: column; align-items: center; gap: 6px; text-decoration: none; color: inherit; min-width: 0; }
+        .group-icon {
+            position: relative; width: 44px; height: 44px; border-radius: 12px; overflow: hidden;
+            background: var(--lightgray-color); display: flex; align-items: center; justify-content: center;
+        }
+        .group-icon::before { content: attr(data-letter); font-weight: bold; font-size: 18px; color: var(--tool-fg); }
+        .group-icon img { position: absolute; inset: 4px; width: calc(100% - 8px); height: calc(100% - 8px); object-fit: contain; }
+        .group-name {
+            font-size: 11px; line-height: 1.3; text-align: center; width: 100%;
+            display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-all;
+        }
+
         .memo-content { flex-grow: 1; font-size: 14px; line-height: 1.8; white-space: normal; }
         .memo-content h1, .memo-content h2 { font-size: 1.1em; border-bottom: 1px solid var(--grid-color); margin-bottom: 5px; }
         .memo-content ul, .memo-content ol {
@@ -661,7 +680,7 @@ const app = {
 
     // 카드 내용이 바뀌었는지 판단하는 값 (위치/선택은 제외)
     memoKey(memo) {
-        return JSON.stringify([memo.type, memo.content, memo.url, memo.meta, this.isWindow(memo)]);
+        return JSON.stringify([memo.type, memo.content, memo.url, memo.meta, this.isWindow(memo), memo.tabs, memo.title]);
     },
 
     render() {
@@ -728,6 +747,9 @@ const app = {
         if (memo.type === 'link' && !memo.meta) {
             if (!memo._loading) { memo._loading = true; this.fetchLinkMeta(memo); }
             innerHTML = `<div class="memo-content" style="padding:16px">⏳ 정보 불러오는 중...</div>`;
+        } else if (this.isGroup(memo)) {
+            innerHTML = this.groupHTML(memo);
+            tools = `<button class="tool-pill toggle-window ${win ? 'on' : ''}" title="${win ? '퀘스트에서 북마크 카드로 보이기' : '퀘스트에서 웹 창으로 보이기'}">웹 창 ${win ? '끄기' : '켜기'}</button>`;
         } else if (memo.type === 'link') {
             const imgTag = memo.meta.image ? `<img src="${memo.meta.image}" class="link-image">` : `<div class="link-image" style="background:var(--lightgray-color);"></div>`;
             innerHTML = `
@@ -767,6 +789,37 @@ const app = {
         const toggle = el.querySelector('.toggle-window');
         if (toggle) toggle.addEventListener('mousedown', (e) => { e.stopPropagation(); e.preventDefault(); this.setWindow(memo.id, !win); });
         return el;
+    },
+
+    // --- 탭 그룹 (퀘스트 웹 창의 탭 여러 개: memo.tabs, memo.title) ---
+    isGroup(memo) {
+        return memo.type === 'link' && Array.isArray(memo.tabs) && memo.tabs.length >= 2;
+    },
+    groupHTML(memo) {
+        const e = (v) => this.escape(v);
+        const items = memo.tabs.map(t => {
+            let host = '', icon = '';
+            try { const u = new URL(t.url); host = u.hostname.replace(/^www\./, ''); icon = u.origin + '/favicon.ico'; } catch (err) {}
+            const m = t.meta || {};
+            if (m.icon) icon = m.icon;
+            const name = m.title && m.title !== t.url ? m.title : host;
+            return `<a class="group-item" href="${e(t.url)}" target="_blank" title="${e(name)}" onclick="event.stopPropagation()">
+                <span class="group-icon" data-letter="${e((host[0] || '·').toUpperCase())}">${icon ? `<img src="${e(icon)}" alt="" onerror="this.remove()">` : ''}</span>
+                <span class="group-name">${e(name)}</span>
+            </a>`;
+        }).join('');
+        const title = (memo.title || '').trim();
+        // 웹 창 배지는 제목 줄 오른쪽에 (카드 위에 겹쳐 두면 제목을 가림)
+        return `<div class="group-card">
+            <div class="group-head">
+                <div class="group-title ${title ? '' : 'empty'}">${e(title || `탭 ${memo.tabs.length}개`)}</div>
+                ${this.isWindow(memo) ? `<div class="web-badge inline">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg>
+                    웹 창
+                </div>` : ''}
+            </div>
+            <div class="group-grid">${items}</div>
+        </div>`;
     },
 
     // --- 웹 창 (퀘스트와 같은 spatial.window 표시를 씀) ---
@@ -855,7 +908,8 @@ const app = {
     openEditor(id) {
         this.ui.editingId = id;
         const memo = this.findItem(id);
-        const val = memo.type === 'link' ? memo.url : memo.content;
+        // 탭 그룹은 편집하면 그룹 이름을 고침
+        const val = this.isGroup(memo) ? (memo.title || '') : memo.type === 'link' ? memo.url : memo.content;
         document.getElementById('editor-textarea').value = val;
         document.getElementById('editor-modal').classList.add('active');
     },
@@ -868,7 +922,10 @@ const app = {
         const val = document.getElementById('editor-textarea').value;
         const memo = this.findItem(this.ui.editingId);
         if (memo) {
-            if (memo.type === 'link' && memo.url !== val.trim()) {
+            if (this.isGroup(memo)) {
+                if (val.trim()) memo.title = val.trim(); else delete memo.title;
+            }
+            else if (memo.type === 'link' && memo.url !== val.trim()) {
                 // 주소가 바뀌면 제목/이미지를 다시 불러옴
                 memo.url = val.trim(); delete memo.meta; delete memo._loading;
             }
