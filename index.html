@@ -878,22 +878,25 @@ const app = {
             this.render(); this.saveToStorage();
         }
     },
+    async findDriveFile(name) {
+        const res = await fetch(`https://${localStorage.getItem('host')}/api/drive/files/find`, {
+            method: 'POST',
+            body: JSON.stringify({ name }),
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
+                'Content-Type': 'application/json',
+            },
+            credentials: 'omit',
+        })
+        return await res.json()
+    },
     async fetchData() {
         if (localStorage.getItem('accessToken')) {
             if (confirm("불러오시겠습니까? 기존 캔버스를 덮어씌웁니다.")) {
 
-                const mifile = await fetch(`https://${localStorage.getItem('host')}/api/drive/files/find`, {
-                    method: 'POST',
-                    body: JSON.stringify({ 
-                        name: `constelgrid_test.json`
-                    }),
-                    headers: {
-                        'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
-                        'Content-Type': 'application/json',
-                    },
-                    credentials: 'omit',
-                })
-                    const fileJSON = await mifile.json()
+                let fileJSON = await this.findDriveFile(`constelgrid.json`)
+                // 예전 이름으로만 저장돼 있으면 그걸 불러옴 (예전 파일은 백업으로 남겨 둠)
+                if (fileJSON.length === 0) fileJSON = await this.findDriveFile(`constelgrid_test.json`)
                 if (fileJSON.length > 0) {
                     const proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(fileJSON[0].url);
                     const data = await fetch(proxyUrl)
@@ -917,22 +920,11 @@ const app = {
         console.log(blob)
         if (localStorage.getItem('accessToken')) {
             const formData = new FormData();
-            formData.append("file", blob, "constelgrid_test.json");
-            formData.append("name", "constelgrid_test.json");
+            formData.append("file", blob, "constelgrid.json");
+            formData.append("name", "constelgrid.json");
 
             if (confirm("저장하시겠습니까? 기존 드라이브 데이터를 덮어씌웁니다.")) {
-                const mifile = await fetch(`https://${localStorage.getItem('host')}/api/drive/files/find`, {
-                    method: 'POST',
-                    body: JSON.stringify({ 
-                        name: `constelgrid_test.json`
-                    }),
-                    headers: {
-                        'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
-                        'Content-Type': 'application/json',
-                    },
-                    credentials: 'omit',
-                })
-                const fileJSON = await mifile.json()
+                const fileJSON = await this.findDriveFile(`constelgrid.json`)
                 if (fileJSON.length > 0) {
                     
                     const deleteMifile = await fetch(`https://${localStorage.getItem('host')}/api/drive/files/delete`, {
