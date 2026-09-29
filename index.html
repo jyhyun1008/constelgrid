@@ -415,16 +415,73 @@ const app = {
         if (item.id.startsWith('web_')) return { w: 300, h: 300 };
         return item.type === 'link' ? { w: 300, h: 250 } : { w: 220, h: 120 };
     },
-    // 2D 위치가 없는 웹 창은 메모들 오른쪽에 세로로 놓음
-    layoutWebs() {
-        const missing = this.webs().filter(w => typeof w.x !== 'number');
+    /**
+     * 퀘스트에서만 만든 것(2D 위치 없음)은 VR 위치를 평면에 정사영해서 2D 위치를 정함.
+     * 투영면: VR 속 물건들이 가로로 퍼진 방향(x,z의 주성분)을 가로축, 높이를 세로축으로 하는 수직 평면.
+     * 2D와 VR 위치를 둘 다 가진 메모들에 맞춰 좌우 방향과 위치를 맞춘다.
+     */
+    layoutFromSpatial() {
+        const hasXY = i => typeof i.x === 'number' && typeof i.y === 'number';
+        const items = [...this.data.memos, ...this.webs()];
+        const missing = items.filter(i => !hasXY(i));
         if (!missing.length) return;
-        const ms = this.data.memos;
-        const center = this.getCenterCoordinates();
-        const right = ms.length ? Math.max(...ms.map(m => m.x + this.itemSize(m).w)) : center.x;
-        const top = ms.length ? Math.min(...ms.map(m => m.y)) : center.y;
-        const placed = this.webs().length - missing.length;
-        missing.forEach((w, i) => { w.x = right + 80; w.y = top + (placed + i) * 340; });
+
+        const spatial = items.filter(i => i.spatial && Array.isArray(i.spatial.p));
+        const PX_PER_M = 800;
+        let proj = null;
+        if (spatial.length) {
+            const mx = spatial.reduce((a, i) => a + i.spatial.p[0], 0) / spatial.length;
+            const mz = spatial.reduce((a, i) => a + i.spatial.p[2], 0) / spatial.length;
+            let sxx = 0, sxz = 0, szz = 0;
+            spatial.forEach(i => {
+                const dx = i.spatial.p[0] - mx, dz = i.spatial.p[2] - mz;
+                sxx += dx * dx; sxz += dx * dz; szz += dz * dz;
+            });
+            // 퍼짐이 거의 없으면 처음 바라보던 방향(-z)의 오른쪽(+x)을 가로축으로
+            const angle = (sxx + szz > 1e-6) ? 0.5 * Math.atan2(2 * sxz, sxx - szz) : 0;
+            let ax = Math.cos(angle), az = Math.sin(angle);
+            const u = i => (i.spatial.p[0] - mx) * ax + (i.spatial.p[2] - mz) * az;
+            // 좌우 방향: 기준 메모들의 2D x와 같은 방향이 되게, 기준이 없으면 원점에서 바라본 오른쪽이 +가 되게
+            const refs = spatial.filter(hasXY);
+            let corr = 0;
+            if (refs.length >= 2) {
+                const ux = refs.reduce((a, i) => a + u(i), 0) / refs.length;
+                const xx = refs.reduce((a, i) => a + i.x, 0) / refs.length;
+                refs.forEach(i => { corr += (u(i) - ux) * (i.x - xx); });
+            } else {
+                // 원점에서 가운데를 보는 방향 f=(mx,mz)의 오른쪽은 (-mz, mx)
+                corr = ax * -mz + az * mx;
+            }
+            if (corr < 0) { ax = -ax; az = -az; }
+            proj = i => ({ x: u(i) * PX_PER_M, y: -i.spatial.p[1] * PX_PER_M });
+
+            // 위치 맞추기: 기준 메모들의 (2D 가운데 - 투영) 평균만큼 옮김
+            let tx, ty;
+            if (refs.length) {
+                tx = refs.reduce((a, i) => a + (i.x + this.itemSize(i).w / 2 - proj(i).x), 0) / refs.length;
+                ty = refs.reduce((a, i) => a + (i.y + this.itemSize(i).h / 2 - proj(i).y), 0) / refs.length;
+            } else {
+                const c = this.getCenterCoordinates();
+                const pc = spatial.map(proj);
+                tx = c.x - pc.reduce((a, p) => a + p.x, 0) / pc.length;
+                ty = c.y - pc.reduce((a, p) => a + p.y, 0) / pc.length;
+            }
+            missing.filter(i => i.spatial && Array.isArray(i.spatial.p)).forEach(i => {
+                const p = proj(i), size = this.itemSize(i);
+                i.x = p.x + tx - size.w / 2;
+                i.y = p.y + ty - size.h / 2;
+            });
+        }
+
+        // VR 위치도 없으면 메모들 오른쪽에 세로로
+        const rest = items.filter(i => !hasXY(i));
+        if (rest.length) {
+            const placed = items.filter(hasXY);
+            const c = this.getCenterCoordinates();
+            const right = placed.length ? Math.max(...placed.map(i => i.x + this.itemSize(i).w)) : c.x;
+            const top = placed.length ? Math.min(...placed.map(i => i.y)) : c.y;
+            rest.forEach((i, k) => { i.x = right + 80; i.y = top + k * 340; });
+        }
         this.saveToStorage();
     },
     youtubeId(url) {
@@ -565,6 +622,7 @@ const app = {
         const connectionsLayer = document.getElementById('connections-layer');
         memosLayer.innerHTML = '';
         connectionsLayer.innerHTML = ''; // SVG 초기화
+        this.layoutFromSpatial();
 
         // 메모 렌더링
         this.data.memos.forEach(memo => {
@@ -608,7 +666,6 @@ const app = {
         });
 
         // 퀘스트 앱에서 연 웹 창
-        this.layoutWebs();
         this.webs().forEach(web => {
             if (!web.meta && !web._loading) { web._loading = true; this.fetchWebMeta(web); }
             const meta = web.meta || {};
