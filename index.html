@@ -4,8 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>별자리 메모보드 - 무한 캔버스 위의 아이디어 모음집</title>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- 외부 스크립트는 버전을 고정하고, 내용이 바뀌면 안 불러오게(integrity) -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@15.0.12/marked.min.js" integrity="sha384-948ahk4ZmxYVYOc+rxN1H2gM1EJ2Duhp7uHtZ4WSLkV4Vtx5MUqnV+l7u9B+jFv+" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.4.16/dist/purify.min.js" integrity="sha384-a7SzOxErzJ3ZpQz0zJ32d67dSitNzPcbfybc/ykU9KJhMgZkwqfSxlhhdJRS+XGL" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lucide@1.49.0/dist/umd/lucide.min.js" integrity="sha384-7mWwAGEOOlxvEBR+Mpy0eVhGL+9abGHkZtVoTs+dvrWkI5g00lyMaAxRIK+rqXGt" crossorigin="anonymous"></script>
     <style>
         :root {
             --bg-color: #f8f9fa;
@@ -471,6 +473,10 @@ const app = {
         }
         this.render(); this.saveToStorage();
     },
+    // http(s) 주소만 통과 (javascript: 같은 주소로 스크립트가 실행되지 않게)
+    safeUrl(u) {
+        return typeof u === 'string' && /^https?:\/\//i.test(u.trim()) ? u.trim() : '';
+    },
     escape(s) {
         return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     },
@@ -565,9 +571,6 @@ const app = {
             web.meta = { title: web.url, desc: '', image: null, publisher: '' };
         }
         this.render(); this.saveToStorage();
-    },
-    escape(s) {
-        return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     },
 
     getCenterCoordinates() {
@@ -751,24 +754,30 @@ const app = {
             innerHTML = this.groupHTML(memo);
             tools = `<button class="tool-pill toggle-window ${win ? 'on' : ''}" title="${win ? '퀘스트에서 북마크 카드로 보이기' : '퀘스트에서 웹 창으로 보이기'}">웹 창 ${win ? '끄기' : '켜기'}</button>`;
         } else if (memo.type === 'link') {
-            const imgTag = memo.meta.image ? `<img src="${memo.meta.image}" class="link-image">` : `<div class="link-image" style="background:var(--lightgray-color);"></div>`;
+            // 제목/설명은 웹 페이지가 정한 글이라 그대로 넣으면 스크립트가 끼어들 수 있음: 모두 이스케이프
+            const e = (v) => this.escape(v);
+            const image = this.safeUrl(memo.meta.image);
+            const imgTag = image ? `<img src="${e(image)}" class="link-image">` : `<div class="link-image" style="background:var(--lightgray-color);"></div>`;
             innerHTML = `
                 ${imgTag}
                 <div class="link-info">
-                    <div class="link-title">${memo.meta.title}</div>
-                    <div class="link-desc">${memo.meta.desc}</div>
-                    <div class="link-domain">🔗 ${memo.meta.publisher}</div>
+                    <div class="link-title">${e(memo.meta.title)}</div>
+                    <div class="link-desc">${e(memo.meta.desc)}</div>
+                    <div class="link-domain">🔗 ${e(memo.meta.publisher)}</div>
                 </div>
                 ${win ? `<div class="web-badge">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg>
                     웹 창
                 </div>` : ''}
-                <a href="${memo.url}" target="_blank" style="position:absolute;top:24px;left:0;width:100%;bottom:0;" onclick="event.stopPropagation()"></a>
+                <a href="${e(this.safeUrl(memo.url) || '#')}" target="_blank" rel="noopener" style="position:absolute;top:24px;left:0;width:100%;bottom:0;" onclick="event.stopPropagation()"></a>
             `;
             // 퀘스트에서 웹 창으로 보일지 켜고 끄기
             tools = `<button class="tool-pill toggle-window ${win ? 'on' : ''}" title="${win ? '퀘스트에서 북마크 카드로 보이기' : '퀘스트에서 웹 창으로 보이기'}">웹 창 ${win ? '끄기' : '켜기'}</button>`;
         } else {
-            const md = typeof marked !== 'undefined' ? marked.parse(memo.content) : memo.content;
+            // 마크다운 결과는 스크립트/이벤트 속성을 걸러서 넣음 (정화 도구를 못 불러왔으면 글자 그대로)
+            const md = typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined'
+                ? DOMPurify.sanitize(marked.parse(memo.content || ''))
+                : this.escape(memo.content).replace(/\n/g, '<br>');
             innerHTML = `<div class="memo-content">${md}</div>`;
         }
 
@@ -801,9 +810,9 @@ const app = {
             let host = '', icon = '';
             try { const u = new URL(t.url); host = u.hostname.replace(/^www\./, ''); icon = u.origin + '/favicon.ico'; } catch (err) {}
             const m = t.meta || {};
-            if (m.icon) icon = m.icon;
+            if (this.safeUrl(m.icon)) icon = m.icon;
             const name = m.title && m.title !== t.url ? m.title : host;
-            return `<a class="group-item" href="${e(t.url)}" target="_blank" title="${e(name)}" onclick="event.stopPropagation()">
+            return `<a class="group-item" href="${e(this.safeUrl(t.url) || '#')}" target="_blank" rel="noopener" title="${e(name)}" onclick="event.stopPropagation()">
                 <span class="group-icon" data-letter="${e((host[0] || '·').toUpperCase())}">${icon ? `<img src="${e(icon)}" alt="" onerror="this.remove()">` : ''}</span>
                 <span class="group-name">${e(name)}</span>
             </a>`;
