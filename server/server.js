@@ -4,6 +4,7 @@
 //   GET /downloads/...      퀘스트 앱 APK와 최신 버전 정보(latest.json). git/이미지 밖의 폴더(DOWNLOADS_DIR)에서
 // 외부 패키지 없이 Node 22 기본 기능만 쓴다.
 import http from 'node:http';
+import https from 'node:https';
 import fs from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import path from 'node:path';
@@ -17,6 +18,8 @@ const UA = 'Mozilla/5.0 (compatible; ConstelgridBot/1.0; +https://grid.howeverin
 const MAX_HTML = 2 * 1024 * 1024;
 const MAX_FILE = 20 * 1024 * 1024;
 const META_TTL = 7 * 24 * 3600 * 1000;
+const META_MAX = 5000; // 캐시가 끝없이 커지지 않게
+const RATE_LIMIT = 120; // IP 하나가 1분에 보낼 수 있는 /api 요청 수
 const DOWNLOADS = path.resolve(process.env.DOWNLOADS_DIR || path.join(import.meta.dirname, '..', 'downloads'));
 
 const TYPES = {
@@ -54,14 +57,33 @@ function isPrivate(ip) {
   return v === '::1' || v === '::' || v.startsWith('fc') || v.startsWith('fd') || v.startsWith('fe80');
 }
 
-async function checkUrl(raw) {
+function checkUrl(raw) {
   let u;
   try { u = new URL(raw); } catch { throw new HttpError(400, 'bad url'); }
   if (u.protocol !== 'https:' && u.protocol !== 'http:') throw new HttpError(400, 'bad url');
-  const addrs = await dns.lookup(u.hostname, { all: true }).catch(() => []);
-  if (!addrs.length) throw new HttpError(502, 'unknown host');
-  if (addrs.some(a => isPrivate(a.address))) throw new HttpError(403, 'private address');
+  // 숫자 IP로 적은 주소는 이름 찾기를 거치지 않으니 여기서 막음
+  const host = u.hostname.replace(/^\[|\]$/g, '');
+  if (net.isIP(host) && isPrivate(host)) throw new HttpError(403, 'private address');
   return u;
+}
+
+// 실제로 접속하는 순간에 찾은 주소를 검사 (미리 확인하고 나중에 다시 찾으면 그 사이에 주소를 바꿔치기할 수 있음)
+function guardedLookup(hostname, options, cb) {
+  dns.lookup(hostname, { all: true }).then(addrs => {
+    if (!addrs.length) return cb(new HttpError(502, 'unknown host'));
+    if (addrs.some(a => isPrivate(a.address))) return cb(new HttpError(403, 'private address'));
+    if (options && options.all) cb(null, addrs);
+    else cb(null, addrs[0].address, addrs[0].family);
+  }, () => cb(new HttpError(502, 'unknown host')));
+}
+
+function get(u, headers) {
+  return new Promise((resolve, reject) => {
+    const mod = u.protocol === 'https:' ? https : http;
+    const req = mod.get(u, { headers, lookup: guardedLookup, timeout: 10000 }, resolve);
+    req.on('timeout', () => req.destroy(Object.assign(new Error('timeout'), { name: 'TimeoutError' })));
+    req.on('error', reject);
+  });
 }
 
 class HttpError extends Error {
@@ -72,14 +94,11 @@ class HttpError extends Error {
 async function safeFetch(raw, accept) {
   let url = raw;
   for (let i = 0; i < 5; i++) {
-    const u = await checkUrl(url);
-    const res = await fetch(u, {
-      redirect: 'manual',
-      headers: { 'User-Agent': UA, Accept: accept, 'Accept-Language': 'ko,en;q=0.8' },
-      signal: AbortSignal.timeout(10000),
-    });
-    if (res.status >= 300 && res.status < 400 && res.headers.get('location')) {
-      url = new URL(res.headers.get('location'), u).href;
+    const u = checkUrl(url);
+    const res = await get(u, { 'User-Agent': UA, Accept: accept, 'Accept-Language': 'ko,en;q=0.8' });
+    if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+      res.resume();
+      url = new URL(res.headers.location, u).href;
       continue;
     }
     return { res, finalUrl: u.href };
@@ -90,11 +109,12 @@ async function safeFetch(raw, accept) {
 async function readLimited(res, max) {
   const chunks = [];
   let size = 0;
-  for await (const c of res.body) {
+  for await (const c of res) {
     size += c.length;
     if (size > max) break;
     chunks.push(c);
   }
+  res.destroy();
   return Buffer.concat(chunks);
 }
 
@@ -133,12 +153,12 @@ async function handleMeta(url) {
   const hit = metaCache[url];
   if (hit && Date.now() - hit.at < META_TTL) return hit.meta;
   const { res, finalUrl } = await safeFetch(url, 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.5');
-  if (!res.ok) throw new HttpError(502, `upstream ${res.status}`);
-  const type = res.headers.get('content-type') || '';
+  if (res.statusCode < 200 || res.statusCode >= 300) { res.destroy(); throw new HttpError(502, `upstream ${res.statusCode}`); }
+  const type = res.headers['content-type'] || '';
   let meta;
   if (type.startsWith('image/')) {
     meta = { title: url, desc: '', image: finalUrl, publisher: new URL(finalUrl).hostname };
-    res.body?.cancel();
+    res.destroy();
   } else {
     const buf = await readLimited(res, MAX_HTML);
     const charset = (type.match(/charset=([\w-]+)/i) || [])[1] || 'utf-8';
@@ -147,6 +167,11 @@ async function handleMeta(url) {
     meta = parseMeta(html, finalUrl);
   }
   metaCache[url] = { at: Date.now(), meta };
+  const keys = Object.keys(metaCache);
+  if (keys.length > META_MAX) {
+    keys.sort((a, b) => metaCache[a].at - metaCache[b].at);
+    for (const k of keys.slice(0, keys.length - META_MAX)) delete metaCache[k];
+  }
   saveCacheSoon();
   return meta;
 }
@@ -154,7 +179,7 @@ async function handleMeta(url) {
 // --- /api/fetch: 보드 JSON만 중계 ---
 async function handleFetch(url, out) {
   const { res } = await safeFetch(url, 'application/json,*/*;q=0.5');
-  if (!res.ok) throw new HttpError(502, `upstream ${res.status}`);
+  if (res.statusCode < 200 || res.statusCode >= 300) { res.destroy(); throw new HttpError(502, `upstream ${res.statusCode}`); }
   const buf = await readLimited(res, MAX_FILE + 1);
   if (buf.length > MAX_FILE) throw new HttpError(413, 'too large');
   try { JSON.parse(buf.toString('utf8')); } catch { throw new HttpError(415, 'not json'); }
@@ -220,10 +245,34 @@ function sendJson(out, status, body) {
   out.end(JSON.stringify(body));
 }
 
+// --- 요청 횟수 제한: IP마다 1분에 RATE_LIMIT번 (서버가 남의 중계기로 쓰이지 않게) ---
+const hits = new Map();
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, h] of hits) if (now - h.start > 60000) hits.delete(ip);
+}, 60000).unref();
+
+function clientIp(req) {
+  // nginx(같은 서버, 도커 내부망)를 거쳐 오면 X-Forwarded-For의 첫 주소가 실제 사용자
+  const remote = (req.socket.remoteAddress || '').replace(/^::ffff:/, '');
+  const fwd = req.headers['x-forwarded-for'];
+  if (fwd && isPrivate(remote)) return String(fwd).split(',')[0].trim();
+  return remote;
+}
+
+function limited(req) {
+  const ip = clientIp(req), now = Date.now();
+  const h = hits.get(ip);
+  if (!h || now - h.start > 60000) { hits.set(ip, { start: now, n: 1 }); return false; }
+  h.n += 1;
+  return h.n > RATE_LIMIT;
+}
+
 http.createServer(async (req, out) => {
   const u = new URL(req.url, 'http://localhost');
   try {
     if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'method not allowed');
+    if (u.pathname.startsWith('/api/') && u.pathname !== '/api/health' && limited(req)) throw new HttpError(429, 'too many requests');
     if (u.pathname === '/api/health') return sendJson(out, 200, { ok: true });
     if (u.pathname === '/api/meta') {
       const url = u.searchParams.get('url');
